@@ -27,7 +27,7 @@ pub fn parse_keyword(keyword: &str) -> Option<TokenType> {
 }
 
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -78,7 +78,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

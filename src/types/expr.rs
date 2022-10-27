@@ -1,17 +1,19 @@
-use crate::types::token::TokenType;
+use crate::types::token::{Token, TokenType};
 
-pub trait Expr {}
+pub trait Expression {}
+
+pub trait Operator {}
 
 pub struct Binary {
-    pub left: Box<dyn Expr>,
-    pub right: Box<dyn Expr>,
-    pub operator: TokenType,
+    pub left: Box<dyn Expression>,
+    pub right: Box<dyn Expression>,
+    pub operator: Token,
 }
 
-impl Expr for Binary {}
+impl Expression for Binary {}
 
 impl Binary {
-    pub fn new(left: Box<dyn Expr>, operator: TokenType, right: Box<dyn Expr>) -> Self {
+    pub fn new(left: Box<dyn Expression>, operator: Token, right: Box<dyn Expression>) -> Self {
         return Self {
             left,
             right,
@@ -22,6 +24,13 @@ impl Binary {
 
 pub struct Unary {}
 
-impl Expr for Unary {
+impl Expression for Unary {}
 
-}
+pub struct Literal {}
+
+impl Expression for Literal {}
+
+pub struct Grouping {}
+
+impl Expression for Grouping {}
+
