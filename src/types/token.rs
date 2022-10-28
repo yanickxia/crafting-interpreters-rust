@@ -1,7 +1,6 @@
+use phf::phf_map;
 use std::any::Any;
 use std::error::Error;
-use phf::phf_map;
-
 
 static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
     "and" => TokenType::And,
@@ -25,7 +24,6 @@ static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
 pub fn parse_keyword(keyword: &str) -> Option<TokenType> {
     KEYWORDS.get(keyword).cloned()
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
@@ -78,7 +76,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

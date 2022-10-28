@@ -1,7 +1,7 @@
-use core::panicking::panic;
 use crate::types::expr::{Binary, Expression};
-use crate::types::token::{Token, TokenType};
 use crate::types::token::TokenType::{BangEqual, Eof, EqualEqual};
+use crate::types::token::{Token, TokenType};
+use core::panicking::panic;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -48,7 +48,7 @@ impl Parser {
         return self.peek().token_type.eq(&token_type);
     }
 
-    fn advance(&mut self) -> Token {
+    fn advance(&mut self) -> &Token {
         if !self.at_end() {
             self.current += 1
         }
@@ -59,11 +59,11 @@ impl Parser {
         return self.peek().token_type == Eof;
     }
 
-    fn peek(&mut self) -> Token {
-        return self.tokens[self.current].clone();
+    fn peek(&mut self) -> &Token {
+        return &self.tokens[self.current];
     }
 
-    fn previous(&mut self) -> Token {
-        return self.tokens[self.current - 1].clone();
+    fn previous(&mut self) -> &Token {
+        return &self.tokens[self.current - 1];
     }
 }
