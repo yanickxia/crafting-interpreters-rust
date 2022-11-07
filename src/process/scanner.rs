@@ -100,8 +100,8 @@ impl Scanner {
                 };
                 self.add_token_type(next_token)
             }
-            "<!>" => {
-                let next_token = if self.match_next("") {
+            "<" => {
+                let next_token = if self.match_next("=") {
                     TokenType::LessEqual
                 } else {
                     TokenType::Less
