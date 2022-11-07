@@ -198,7 +198,7 @@ impl Scanner {
     }
 
     fn string(&mut self) -> Option<Box<dyn Error>> {
-        while self.peek().is_some() && !self.is_at_end() {
+        while self.peek().is_some() && self.peek().unwrap() != "\"" && !self.is_at_end() {
             if self.peek()? == "\n" {
                 self.line += 1
             }

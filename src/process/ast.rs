@@ -12,13 +12,10 @@ pub trait Printer {
     fn visit_expr(&self, group: &expr::Expression) -> String;
 }
 
+#[derive(Default)]
 pub struct AstPrinter {}
 
 impl AstPrinter {
-    pub fn new() -> Self {
-        return AstPrinter {};
-    }
-
     fn parenthesize(&self, name: &str, expressions: Vec<&Expression>) -> String {
         let mut result = "".to_string();
         result = result.add("(");

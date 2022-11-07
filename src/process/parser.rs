@@ -40,52 +40,64 @@ impl Parser {
         return self.equality();
     }
 
+    /**
+    expression     → equality ;
+    equality       → comparison ( ( "!=" | "==" ) comparison )* ;
+    comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+    term           → factor ( ( "-" | "+" ) factor )* ;
+    factor         → unary ( ( "/" | "*" ) unary )* ;
+    unary          → ( "!" | "-" ) unary
+                   | primary ;
+    primary        → NUMBER | STRING | "true" | "false" | "nil"
+                   | "(" expression ")" ;
+    **/
     fn equality(&mut self) -> Result<Expression, expr::ExpError> {
-        let left = self.comparison()?;
+        let mut expr = self.comparison()?;
         while self.match_token(vec![BangEqual, EqualEqual]) {
             let operator = self.previous().clone();
             let right = self.comparison()?;
-            return Ok(Expression::Binary(Box::new(left), BinaryOp {
+            expr = Expression::Binary(Box::new(expr), BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
-            }, Box::new(right)));
+            }, Box::new(right))
         }
-        return Ok(left);
+        return Ok(expr);
     }
 
     fn comparison(&mut self) -> Result<Expression, expr::ExpError> {
-        let left = self.term()?;
+        let mut expr = self.term()?;
         while self.match_token(vec![Greater, GreaterEqual, Less, LessEqual]) {
             let operator = self.previous().clone();
             let right = self.term()?;
-            return Ok(Expression::Binary(Box::new(left), BinaryOp {
+
+            expr = Expression::Binary(Box::new(expr), BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
-            }, Box::new(right)));
+            }, Box::new(right))
         }
-        return Ok(left);
+        return Ok(expr);
     }
 
     fn term(&mut self) -> Result<Expression, expr::ExpError> {
-        let left = self.factor()?;
+        let mut expr = self.factor()?;
         while self.match_token(vec![Minus, Plus]) {
             let operator = self.previous().clone();
             let right = self.factor()?;
-            return Ok(Expression::Binary(Box::new(left), BinaryOp {
+            expr = Expression::Binary(Box::new(expr), BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
-            }, Box::new(right)));
+            }, Box::new(right))
         }
-        return Ok(left);
+        return Ok(expr);
     }
 
     fn factor(&mut self) -> Result<Expression, expr::ExpError> {
-        let left = self.unary()?;
+        let mut expr = self.unary()?;
         while self.match_token(vec![Slash, Star]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
-            return Ok(Expression::Binary(Box::new(left), BinaryOp {
+            expr = Expression::Binary(Box::new(expr), BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
-            }, Box::new(right)));
+            }, Box::new(right))
         }
-        return Ok(left);
+        return Ok(expr);
     }
 
     fn unary(&mut self) -> Result<Expression, expr::ExpError> {

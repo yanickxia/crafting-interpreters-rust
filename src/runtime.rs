@@ -2,8 +2,10 @@ use std::{fs, io};
 use std::error::Error;
 use std::io::BufRead;
 
-use crate::process::{ast, parser, scanner};
+use crate::process::{ast, interpreter, parser, scanner};
 use crate::process::ast::Printer;
+use crate::process::interpreter::Interpreter;
+use crate::types::val::{InterpreterError, Value};
 
 pub struct Runtime {
     had_error: bool,
@@ -39,7 +41,16 @@ impl Runtime {
 
         match expression {
             Ok(exp) => {
-                println!("{}", ast::AstPrinter::new().visit_expr(&exp));
+                println!("ast print: {}", ast::AstPrinter::default().visit_expr(&exp));
+
+                match interpreter::AstInterpreter::default().evaluate(&exp) {
+                    Ok(result) => {
+                        println!("interpret: {:?}", result)
+                    }
+                    Err(e) => {
+                        self.report(Box::new(e))
+                    }
+                }
             }
             Err(e) => {
                 self.report(Box::new(e))
