@@ -1,6 +1,5 @@
 use crafting_interpreters::runtime::Runtime;
 
-
 fn main() {
     let mut runtime = Runtime::default();
     let arg_length = std::env::args().count();

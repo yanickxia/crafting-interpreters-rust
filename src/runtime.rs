@@ -1,7 +1,9 @@
 use std::{fs, io};
 use std::error::Error;
 use std::io::BufRead;
-use crate::process::scanner;
+
+use crate::process::{ast, parser, scanner};
+use crate::process::ast::Printer;
 
 pub struct Runtime {
     had_error: bool,
@@ -32,9 +34,16 @@ impl Runtime {
     }
 
     fn run(&mut self, file: String) {
-        let vec = scanner::scan_tokens(file);
-        for x in vec {
-            println!("token: {:?}", x)
+        let tokens = scanner::scan_tokens(file);
+        let expression = parser::Parser::new(tokens.unwrap()).parse();
+
+        match expression {
+            Ok(exp) => {
+                println!("{}", ast::AstPrinter::new().visit_expr(&exp));
+            }
+            Err(e) => {
+                self.report(Box::new(e))
+            }
         }
     }
 

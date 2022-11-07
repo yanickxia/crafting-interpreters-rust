@@ -1,35 +1,134 @@
-use crate::types::token::Token;
+use std::error::Error;
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 
-pub trait Expression {}
+use crate::process::ast;
+use crate::process::ast::Printer;
+use crate::types::token::{Token, TokenType};
 
-pub trait Operator {}
-
-pub struct Binary<'a> {
-    pub left: Box<dyn Expression>,
-    pub right: Box<dyn Expression>,
-    pub operator: &'a Token,
+#[derive(Debug)]
+pub enum ExpError {
+    UnexpectedToken(Token),
+    TokenMismatch {
+        expected: TokenType,
+        found: Token,
+        err_string: Option<String>,
+    },
+    ConvertFailed {
+        expected: Vec<TokenType>,
+        found: Token,
+    },
+    ExpectedExpression {
+        token_type: TokenType,
+        line: usize,
+    },
 }
 
-impl Expression for Binary<'_> {}
-
-impl Binary<'_> {
-    pub fn new(left: Box<dyn Expression>, operator: &Token, right: Box<dyn Expression>) -> Self {
-        return Self {
-            left,
-            right,
-            operator,
-        };
+impl Display for ExpError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self {
+            ExpError::UnexpectedToken(tok) => write!(
+                f,
+                "Unexpected token {:?} at line={}",
+                tok.token_type, tok.line
+            ),
+            ExpError::TokenMismatch {
+                expected,
+                found,
+                err_string,
+            } => {
+                write!(
+                    f,
+                    "Expected token {:?} but found {:?}",
+                    expected, found.token_type
+                )?;
+                if let Some(on_err_string) = err_string {
+                    write!(f, ": {}", on_err_string)?;
+                }
+                Ok(())
+            }
+            ExpError::ConvertFailed { expected, found } => write!(
+                f,
+                "Cannot ConvertFailed, expected {:?}, found {:?}", expected, found
+            ),
+            ExpError::ExpectedExpression { token_type, line } => write!(
+                f,
+                "ExpectedExpression line={},token_type={:?}",
+                line, token_type
+            )
+        }
     }
 }
 
-pub struct Unary {}
+impl Error for ExpError {}
 
-impl Expression for Unary {}
 
-pub struct Literal {}
+pub enum Expression {
+    Literal(Literal),
+    Unary(UnaryOp, Box<Expression>),
+    Binary(Box<Expression>, BinaryOp, Box<Expression>),
+    Grouping(Box<Expression>),
+}
 
-impl Expression for Literal {}
+impl ast::Accept for Expression {
+    fn accept(&self, printer: &dyn Printer) -> String {
+        return printer.visit_expr(self);
+    }
+}
 
-pub struct Grouping {}
 
-impl Expression for Grouping {}
+#[derive(Debug, Clone)]
+pub enum Literal {
+    Number(f64),
+    String(String),
+    True,
+    False,
+    Nil,
+}
+
+
+#[derive(Debug, Copy, Clone)]
+pub struct UnaryOp {
+    pub token_type: UnaryOperatorType,
+    // pub line: usize,
+    // pub col: i64,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BinaryOp {
+    pub token_type: BinaryOperatorType,
+    // pub line: usize,
+    // pub col: i64,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum UnaryOperatorType {
+    Minus,
+    Bang,
+}
+
+impl Display for UnaryOperatorType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum BinaryOperatorType {
+    EqualEqual,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+}
+
+impl Display for BinaryOperatorType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}

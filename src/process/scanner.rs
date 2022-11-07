@@ -1,9 +1,8 @@
-use std::any::Any;
 use std::error::Error;
 
 use crate::types::err::new_error;
 use crate::types::token;
-use crate::types::token::{Token, TokenType, parse_keyword};
+use crate::types::token::{Literal, parse_keyword, Token, TokenType};
 
 pub struct Scanner {
     source: String,
@@ -44,7 +43,7 @@ impl Scanner {
         self.tokens.push(Token {
             token_type: TokenType::Eof,
             lexeme: "".to_string(),
-            literal: Box::new(()),
+            literal: None,
             line: self.line,
         });
 
@@ -164,7 +163,7 @@ impl Scanner {
             }
         }
         let x = self.source[self.start..self.current].parse::<f64>().unwrap();
-        self.add_token(TokenType::Number, Box::new(x));
+        self.add_token(TokenType::Number, Some(Literal::Number(x)));
     }
 
     fn is_alpha(input: &str) -> bool {
@@ -211,7 +210,7 @@ impl Scanner {
         }
 
         self.advance();
-        self.add_token(TokenType::String, Box::new(self.source[self.start + 1..self.current - 1].to_string()));
+        self.add_token(TokenType::String, Some(Literal::Str(self.source[self.start + 1..self.current - 1].to_string())));
         None
     }
 
@@ -241,10 +240,10 @@ impl Scanner {
     }
 
     fn add_token_type(&mut self, token: TokenType) {
-        self.add_token(token, Box::new(()))
+        self.add_token(token, None)
     }
 
-    fn add_token(&mut self, token_type: TokenType, literal: Box<dyn Any>) {
+    fn add_token(&mut self, token_type: TokenType, literal: Option<Literal>) {
         let text = self.source[self.start..self.current].to_string();
 
         self.tokens.push(Token {
