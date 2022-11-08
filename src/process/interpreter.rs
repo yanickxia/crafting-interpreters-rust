@@ -1,18 +1,31 @@
 use std::cmp::Ordering;
 use crate::types::{expr, val};
-use crate::types::expr::BinaryOperatorType;
+use crate::types::expr::{BinaryOperatorType, Statement};
 
 
 pub trait Interpreter {
-    fn evaluate(&self, group: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
+    fn visit_expression(&self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
+    fn visit_statement(&self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
 }
 
 #[derive(Default)]
 pub struct AstInterpreter {}
 
 impl Interpreter for AstInterpreter {
-    fn evaluate(&self, group: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
-        match group {
+    fn visit_statement(&self, expr: &Statement) -> Result<val::Value, val::InterpreterError> {
+        return match expr {
+            Statement::Expression(exp) => {
+                self.visit_expression(exp)
+            }
+            Statement::Print(exp) => {
+                println!("{:?}", self.visit_expression(exp));
+                Ok(val::Value::Nil)
+            }
+        };
+    }
+
+    fn visit_expression(&self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
+        match expr {
             expr::Expression::Literal(l) => {
                 match l {
                     expr::Literal::String(s) => {
@@ -33,12 +46,12 @@ impl Interpreter for AstInterpreter {
                 }
             }
             expr::Expression::Grouping(expr) => {
-                self.evaluate(expr)
+                self.visit_expression(expr)
             }
 
             expr::Expression::Binary(left, op, right) => {
-                let left = self.evaluate(left)?;
-                let right = self.evaluate(right)?;
+                let left = self.visit_expression(left)?;
+                let right = self.visit_expression(right)?;
                 return match op.token_type {
                     BinaryOperatorType::EqualEqual => {
                         Ok(val::Value::Bool(left.eq(&right)))
@@ -220,7 +233,7 @@ impl Interpreter for AstInterpreter {
             }
 
             expr::Expression::Unary(opt, expr) => {
-                let value = self.evaluate(expr)?;
+                let value = self.visit_expression(expr)?;
                 return match opt.token_type {
                     expr::UnaryOperatorType::Minus => {
                         match value {

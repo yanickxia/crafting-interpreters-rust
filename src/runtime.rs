@@ -41,14 +41,12 @@ impl Runtime {
 
         match expression {
             Ok(exp) => {
-                println!("ast print: {}", ast::AstPrinter::default().visit_expr(&exp));
-
-                match interpreter::AstInterpreter::default().evaluate(&exp) {
-                    Ok(result) => {
-                        println!("interpret: {:?}", result)
-                    }
-                    Err(e) => {
-                        self.report(Box::new(e))
+                for ex in exp {
+                    match interpreter::AstInterpreter::default().visit_statement(&ex) {
+                        Ok(result) => {}
+                        Err(e) => {
+                            self.report(Box::new(e))
+                        }
                     }
                 }
             }

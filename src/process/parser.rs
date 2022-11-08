@@ -1,7 +1,7 @@
 use crate::types::{expr, token};
 use crate::types::expr::{BinaryOp, BinaryOperatorType, Expression, Literal, UnaryOp, UnaryOperatorType};
 use crate::types::token::{Token, TokenType};
-use crate::types::token::TokenType::{Bang, BangEqual, Eof, EqualEqual, False, Greater, GreaterEqual, LeftParen, Less, LessEqual, Minus, Nil, Number, Plus, RightParen, Semicolon, Slash, Star, String, True};
+use crate::types::token::TokenType::{Bang, BangEqual, Eof, EqualEqual, False, Greater, GreaterEqual, LeftParen, Less, LessEqual, Minus, Nil, Number, Plus, Print, RightParen, Semicolon, Slash, Star, String, True};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -13,8 +13,34 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<Expression, expr::ExpError> {
-        return self.expression();
+    pub fn parse(&mut self) -> Result<Vec<expr::Statement>, expr::ExpError> {
+        let mut statements = vec![];
+        while !self.at_end() {
+            let statement = self.statement()?;
+            statements.push(statement)
+        }
+
+        return Ok(statements);
+    }
+
+    pub fn statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        if self.match_token(vec![Print]) {
+            return self.print_statement();
+        }
+        return self.expression_statement();
+    }
+
+    pub fn print_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let expr = self.expression()?;
+        self.consume(Semicolon, "Expect ';' after expression.")?;
+
+        return Ok(expr::Statement::Print(expr));
+    }
+
+    pub fn expression_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let expr = self.expression()?;
+        self.consume(Semicolon, "Expect ';' after expression.")?;
+        return Ok(expr::Statement::Expression(expr));
     }
 
     fn synchronize(&mut self) {

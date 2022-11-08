@@ -132,3 +132,9 @@ impl Display for BinaryOperatorType {
         write!(f, "{:?}", self)
     }
 }
+
+
+pub enum Statement {
+    Expression(Expression),
+    Print(Expression),
+}
