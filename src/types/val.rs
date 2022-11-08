@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+
 use crate::types::expr;
 
 #[derive(Debug, Clone)]
@@ -30,7 +31,7 @@ impl PartialOrd for Value {
                     _ => { None }
                 }
             }
-            Value::Bool(x) => {
+            Value::Bool(_) => {
                 match other {
                     _ => { None }
                 }
@@ -95,6 +96,9 @@ pub enum InterpreterError {
         right: Value,
         opt: expr::BinaryOperatorType,
     },
+    MissVariable {
+        name: String
+    },
 }
 
 impl Display for InterpreterError {
@@ -110,6 +114,11 @@ impl Display for InterpreterError {
                 "Left {:?} Right {:?} Operator {:?}, not match",
                 left, right, opt
             ),
+
+            InterpreterError::MissVariable { name } => write!(
+                f,
+                "miss param name {}",
+                name)
         }
     }
 }

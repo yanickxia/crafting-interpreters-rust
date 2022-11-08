@@ -2,11 +2,10 @@ use std::error::Error;
 
 use crate::types::err::new_error;
 use crate::types::token;
-use crate::types::token::{Literal, parse_keyword, Token, TokenType};
 
 pub struct Scanner {
     source: String,
-    tokens: Vec<Token>,
+    tokens: Vec<token::Token>,
     start: usize,
     current: usize,
     line: usize,
@@ -40,8 +39,8 @@ impl Scanner {
             }
         }
 
-        self.tokens.push(Token {
-            token_type: TokenType::Eof,
+        self.tokens.push(token::Token {
+            token_type: token::TokenType::Eof,
             lexeme: "".to_string(),
             literal: None,
             line: self.line,
@@ -55,64 +54,64 @@ impl Scanner {
         let c = self.advance();
         match c {
             "(" => {
-                self.add_token_type(TokenType::LeftParen)
+                self.add_token_type(token::TokenType::LeftParen)
             }
             ")" => {
-                self.add_token_type(TokenType::RightParen)
+                self.add_token_type(token::TokenType::RightParen)
             }
             "{" => {
-                self.add_token_type(TokenType::LeftBrace)
+                self.add_token_type(token::TokenType::LeftBrace)
             }
             "}" => {
-                self.add_token_type(TokenType::RightBrace)
+                self.add_token_type(token::TokenType::RightBrace)
             }
             "," => {
-                self.add_token_type(TokenType::Comma)
+                self.add_token_type(token::TokenType::Comma)
             }
             "." => {
-                self.add_token_type(TokenType::Dot)
+                self.add_token_type(token::TokenType::Dot)
             }
             "-" => {
-                self.add_token_type(TokenType::Minus)
+                self.add_token_type(token::TokenType::Minus)
             }
             "+" => {
-                self.add_token_type(TokenType::Plus)
+                self.add_token_type(token::TokenType::Plus)
             }
             ";" => {
-                self.add_token_type(TokenType::Semicolon)
+                self.add_token_type(token::TokenType::Semicolon)
             }
             "*" => {
-                self.add_token_type(TokenType::Star)
+                self.add_token_type(token::TokenType::Star)
             }
             "!" => {
                 let next_token = if self.match_next("=") {
-                    TokenType::BangEqual
+                    token::TokenType::BangEqual
                 } else {
-                    TokenType::Bang
+                    token::TokenType::Bang
                 };
                 self.add_token_type(next_token)
             }
             "=" => {
                 let next_token = if self.match_next("=") {
-                    TokenType::EqualEqual
+                    token::TokenType::EqualEqual
                 } else {
-                    TokenType::Equal
+                    token::TokenType::Equal
                 };
                 self.add_token_type(next_token)
             }
             "<" => {
                 let next_token = if self.match_next("=") {
-                    TokenType::LessEqual
+                    token::TokenType::LessEqual
                 } else {
-                    TokenType::Less
+                    token::TokenType::Less
                 };
                 self.add_token_type(next_token)
             }
             ">" => {
                 let next_token = if self.match_next("=") {
-                    TokenType::GreaterEqual
+                    token::TokenType::GreaterEqual
                 } else {
-                    TokenType::Greater
+                    token::TokenType::Greater
                 };
                 self.add_token_type(next_token)
             }
@@ -163,7 +162,7 @@ impl Scanner {
             }
         }
         let x = self.source[self.start..self.current].parse::<f64>().unwrap();
-        self.add_token(TokenType::Number, Some(Literal::Number(x)));
+        self.add_token(token::TokenType::Number, Some(token::Literal::Number(x)));
     }
 
     fn is_alpha(input: &str) -> bool {
@@ -182,9 +181,9 @@ impl Scanner {
 
         let text = &self.source[self.start..self.current];
 
-        match parse_keyword(text) {
+        match token::parse_keyword(text) {
             None => {
-                self.add_token_type(TokenType::Identifier)
+                self.add_token_type(token::TokenType::Identifier)
             }
             Some(ty) => {
                 self.add_token_type(ty)
@@ -210,7 +209,7 @@ impl Scanner {
         }
 
         self.advance();
-        self.add_token(TokenType::String, Some(Literal::Str(self.source[self.start + 1..self.current - 1].to_string())));
+        self.add_token(token::TokenType::String, Some(token::Literal::Str(self.source[self.start + 1..self.current - 1].to_string())));
         None
     }
 
@@ -239,14 +238,14 @@ impl Scanner {
         return true;
     }
 
-    fn add_token_type(&mut self, token: TokenType) {
+    fn add_token_type(&mut self, token: token::TokenType) {
         self.add_token(token, None)
     }
 
-    fn add_token(&mut self, token_type: TokenType, literal: Option<Literal>) {
+    fn add_token(&mut self, token_type: token::TokenType, literal: Option<token::Literal>) {
         let text = self.source[self.start..self.current].to_string();
 
-        self.tokens.push(Token {
+        self.tokens.push(token::Token {
             token_type,
             lexeme: text,
             literal,

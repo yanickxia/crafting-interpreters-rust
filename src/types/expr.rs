@@ -4,23 +4,26 @@ use std::fmt::{Debug, Display, Formatter};
 
 use crate::process::ast;
 use crate::process::ast::Printer;
-use crate::types::token::{Token, TokenType};
+use crate::types::token;
 
 #[derive(Debug)]
 pub enum ExpError {
-    UnexpectedToken(Token),
+    UnexpectedToken(token::Token),
     TokenMismatch {
-        expected: TokenType,
-        found: Token,
+        expected: token::TokenType,
+        found: token::Token,
         err_string: Option<String>,
     },
     ConvertFailed {
-        expected: Vec<TokenType>,
-        found: Token,
+        expected: Vec<token::TokenType>,
+        found: token::Token,
     },
     ExpectedExpression {
-        token_type: TokenType,
+        token_type: token::TokenType,
         line: usize,
+    },
+    AssignmentFailed {
+        name: String
     },
 }
 
@@ -55,7 +58,8 @@ impl Display for ExpError {
                 f,
                 "ExpectedExpression line={},token_type={:?}",
                 line, token_type
-            )
+            ),
+            ExpError::AssignmentFailed { name } => write!(f, "{}, Invalid assignment target.", name)
         }
     }
 }
@@ -68,6 +72,8 @@ pub enum Expression {
     Unary(UnaryOp, Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Grouping(Box<Expression>),
+    Variable(String),
+    Assign(String, Box<Expression>),
 }
 
 impl ast::Accept for Expression {
@@ -137,4 +143,5 @@ impl Display for BinaryOperatorType {
 pub enum Statement {
     Expression(Expression),
     Print(Expression),
+    Var(String, Expression),
 }

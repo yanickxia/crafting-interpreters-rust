@@ -1,30 +1,45 @@
 use crate::types::{expr, token};
-use crate::types::expr::{BinaryOp, BinaryOperatorType, Expression, Literal, UnaryOp, UnaryOperatorType};
-use crate::types::token::{Token, TokenType};
-use crate::types::token::TokenType::{Bang, BangEqual, Eof, EqualEqual, False, Greater, GreaterEqual, LeftParen, Less, LessEqual, Minus, Nil, Number, Plus, Print, RightParen, Semicolon, Slash, Star, String, True};
 
 pub struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<token::Token>,
     current: usize,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<token::Token>) -> Self {
         Self { tokens, current: 0 }
     }
 
     pub fn parse(&mut self) -> Result<Vec<expr::Statement>, expr::ExpError> {
         let mut statements = vec![];
         while !self.at_end() {
-            let statement = self.statement()?;
+            let statement = self.declaration()?;
             statements.push(statement)
         }
 
         return Ok(statements);
     }
 
+    pub fn declaration(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        if self.match_token(vec![token::TokenType::Var]) {
+            return self.var_declaration();
+        }
+        return self.statement();
+    }
+
+    pub fn var_declaration(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let name = self.consume(token::TokenType::Identifier, "Expect variable name.")?.clone();
+        let mut initializer = expr::Expression::Literal(expr::Literal::Nil);
+        if self.match_token(vec![token::TokenType::Equal]) {
+            initializer = self.expression()?;
+        }
+        self.consume(token::TokenType::Semicolon, "Expect ';' after expression.")?;
+        return Ok(expr::Statement::Var(name.lexeme.to_string(), initializer));
+    }
+
+
     pub fn statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
-        if self.match_token(vec![Print]) {
+        if self.match_token(vec![token::TokenType::Print]) {
             return self.print_statement();
         }
         return self.expression_statement();
@@ -32,26 +47,26 @@ impl Parser {
 
     pub fn print_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
         let expr = self.expression()?;
-        self.consume(Semicolon, "Expect ';' after expression.")?;
+        self.consume(token::TokenType::Semicolon, "Expect ';' after expression.")?;
 
         return Ok(expr::Statement::Print(expr));
     }
 
     pub fn expression_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
         let expr = self.expression()?;
-        self.consume(Semicolon, "Expect ';' after expression.")?;
+        self.consume(token::TokenType::Semicolon, "Expect ';' after expression.")?;
         return Ok(expr::Statement::Expression(expr));
     }
 
     fn synchronize(&mut self) {
         self.advance();
         while !self.at_end() {
-            if self.previous().token_type == Semicolon {
+            if self.previous().token_type == token::TokenType::Semicolon {
                 return;
             }
             match self.peek().token_type {
-                TokenType::Class | TokenType::Fun | TokenType::Var | TokenType::For |
-                TokenType::If | TokenType::While | TokenType::Print | TokenType::Return => {
+                token::TokenType::Class | token::TokenType::Fun | token::TokenType::Var | token::TokenType::For |
+                token::TokenType::If | token::TokenType::While | token::TokenType::Print | token::TokenType::Return => {
                     return;
                 }
                 _ => {}
@@ -62,124 +77,138 @@ impl Parser {
     }
 
 
-    fn expression(&mut self) -> Result<Expression, expr::ExpError> {
-        return self.equality();
+    fn expression(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        return self.assignment();
     }
 
-    /**
-    expression     → equality ;
-    equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-    comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-    term           → factor ( ( "-" | "+" ) factor )* ;
-    factor         → unary ( ( "/" | "*" ) unary )* ;
-    unary          → ( "!" | "-" ) unary
-                   | primary ;
-    primary        → NUMBER | STRING | "true" | "false" | "nil"
-                   | "(" expression ")" ;
-    **/
-    fn equality(&mut self) -> Result<Expression, expr::ExpError> {
+    fn assignment(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        let expr = self.equality()?;
+        if self.match_token(vec![token::TokenType::Equal]) {
+            let equals = self.previous().clone();
+            let value = self.assignment()?;
+
+            return match expr {
+                expr::Expression::Variable(token) => {
+                    Ok(expr::Expression::Assign(token, Box::new(value)))
+                }
+                _ => {
+                    Err(expr::ExpError::AssignmentFailed {
+                        name: equals.lexeme.to_string()
+                    })
+                }
+            };
+        }
+
+        return Ok(expr);
+    }
+
+    fn equality(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.comparison()?;
-        while self.match_token(vec![BangEqual, EqualEqual]) {
+        while self.match_token(vec![token::TokenType::BangEqual, token::TokenType::EqualEqual]) {
             let operator = self.previous().clone();
             let right = self.comparison()?;
-            expr = Expression::Binary(Box::new(expr), BinaryOp {
+            expr = expr::Expression::Binary(Box::new(expr), expr::BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
             }, Box::new(right))
         }
         return Ok(expr);
     }
 
-    fn comparison(&mut self) -> Result<Expression, expr::ExpError> {
+    fn comparison(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.term()?;
-        while self.match_token(vec![Greater, GreaterEqual, Less, LessEqual]) {
+        while self.match_token(vec![token::TokenType::Greater, token::TokenType::GreaterEqual,
+                                    token::TokenType::Less, token::TokenType::LessEqual]) {
             let operator = self.previous().clone();
             let right = self.term()?;
 
-            expr = Expression::Binary(Box::new(expr), BinaryOp {
+            expr = expr::Expression::Binary(Box::new(expr), expr::BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
             }, Box::new(right))
         }
         return Ok(expr);
     }
 
-    fn term(&mut self) -> Result<Expression, expr::ExpError> {
+    fn term(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.factor()?;
-        while self.match_token(vec![Minus, Plus]) {
+        while self.match_token(vec![token::TokenType::Minus, token::TokenType::Plus]) {
             let operator = self.previous().clone();
             let right = self.factor()?;
-            expr = Expression::Binary(Box::new(expr), BinaryOp {
+            expr = expr::Expression::Binary(Box::new(expr), expr::BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
             }, Box::new(right))
         }
         return Ok(expr);
     }
 
-    fn factor(&mut self) -> Result<Expression, expr::ExpError> {
+    fn factor(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.unary()?;
-        while self.match_token(vec![Slash, Star]) {
+        while self.match_token(vec![token::TokenType::Slash, token::TokenType::Star]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
-            expr = Expression::Binary(Box::new(expr), BinaryOp {
+            expr = expr::Expression::Binary(Box::new(expr), expr::BinaryOp {
                 token_type: Self::token_to_binary_token_type(&operator)?,
             }, Box::new(right))
         }
         return Ok(expr);
     }
 
-    fn unary(&mut self) -> Result<Expression, expr::ExpError> {
-        while self.match_token(vec![Bang, Minus]) {
+    fn unary(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        while self.match_token(vec![token::TokenType::Bang, token::TokenType::Minus]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
-            return Ok(Expression::Unary(UnaryOp {
+            return Ok(expr::Expression::Unary(expr::UnaryOp {
                 token_type: Self::token_to_unary_token_type(&operator)?
             }, Box::new(right)));
         }
         return self.primary();
     }
 
-    fn primary(&mut self) -> Result<Expression, expr::ExpError> {
-        if self.match_token(vec![False]) {
-            return Ok(Expression::Literal(Literal::False));
+    fn primary(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        if self.match_token(vec![token::TokenType::False]) {
+            return Ok(expr::Expression::Literal(expr::Literal::False));
         }
 
-        if self.match_token(vec![True]) {
-            return Ok(Expression::Literal(Literal::True));
+        if self.match_token(vec![token::TokenType::True]) {
+            return Ok(expr::Expression::Literal(expr::Literal::True));
         }
 
-        if self.match_token(vec![Nil]) {
-            return Ok(Expression::Literal(Literal::Nil));
+        if self.match_token(vec![token::TokenType::Nil]) {
+            return Ok(expr::Expression::Literal(expr::Literal::Nil));
         }
 
-        if self.match_token(vec![Number]) {
+        if self.match_token(vec![token::TokenType::Number]) {
             match &self.previous().literal {
                 Some(token::Literal::Number(n)) => {
-                    return Ok(Expression::Literal(Literal::Number(*n)));
+                    return Ok(expr::Expression::Literal(expr::Literal::Number(*n)));
                 }
                 Some(l) => panic!(
-                    "internal error in parser: when parsing number, found literal {:?}",
+                    "internal error in parser: when parsing number, found  expr::Literal {:?}",
                     l
                 ),
-                None => panic!("internal error in parser: when parsing number, found no literal"),
+                None => panic!("internal error in parser: when parsing number, found no  expr::Literal"),
             }
         }
 
-        if self.match_token(vec![String]) {
+        if self.match_token(vec![token::TokenType::String]) {
             match &self.previous().literal {
                 Some(token::Literal::Str(str)) => {
-                    return Ok(Expression::Literal(Literal::String(str.to_string())));
+                    return Ok(expr::Expression::Literal(expr::Literal::String(str.to_string())));
                 }
                 Some(l) => panic!(
-                    "internal error in parser: when parsing string, found literal {:?}",
+                    "internal error in parser: when parsing string, found  expr::Literal {:?}",
                     l
                 ),
-                None => panic!("internal error in parser: when parsing string, found no literal"),
+                None => panic!("internal error in parser: when parsing string, found no  expr::Literal"),
             }
         }
+        if self.match_token(vec![token::TokenType::Identifier]) {
+            return Ok(expr::Expression::Variable(self.previous().lexeme.to_string()));
+        }
 
-        if self.match_token(vec![LeftParen]) {
+        if self.match_token(vec![token::TokenType::LeftParen]) {
             let expr = self.expression()?;
-            self.consume(RightParen, "Expect ')' after expression.")?;
-            return Ok(Expression::Grouping(Box::new(expr)));
+            self.consume(token::TokenType::RightParen, "Expect ')' after expression.")?;
+            return Ok(expr::Expression::Grouping(Box::new(expr)));
         }
 
         return Err(expr::ExpError::ExpectedExpression {
@@ -188,7 +217,7 @@ impl Parser {
         });
     }
 
-    fn consume(&mut self, ty: TokenType, message: &str) -> Result<&Token, expr::ExpError> {
+    fn consume(&mut self, ty: token::TokenType, message: &str) -> Result<&token::Token, expr::ExpError> {
         if self.check(ty) {
             return Ok(self.advance());
         }
@@ -200,7 +229,7 @@ impl Parser {
     }
 
 
-    fn match_token(&mut self, token_types: Vec<TokenType>) -> bool {
+    fn match_token(&mut self, token_types: Vec<token::TokenType>) -> bool {
         for token_type in token_types {
             if self.check(token_type) {
                 self.advance();
@@ -210,14 +239,14 @@ impl Parser {
         return false;
     }
 
-    fn check(&mut self, token_type: TokenType) -> bool {
+    fn check(&mut self, token_type: token::TokenType) -> bool {
         if self.at_end() {
             return false;
         }
         return self.peek().token_type.eq(&token_type);
     }
 
-    fn advance(&mut self) -> &Token {
+    fn advance(&mut self) -> &token::Token {
         if !self.at_end() {
             self.current += 1
         }
@@ -225,42 +254,44 @@ impl Parser {
     }
 
     fn at_end(&mut self) -> bool {
-        return self.peek().token_type == Eof;
+        return self.peek().token_type == token::TokenType::Eof;
     }
 
-    fn peek(&self) -> &Token {
+    fn peek(&self) -> &token::Token {
         return &self.tokens[self.current];
     }
 
-    fn previous(&mut self) -> &Token {
+    fn previous(&mut self) -> &token::Token {
         return &self.tokens[self.current - 1];
     }
 
-    fn token_to_binary_token_type(token: &Token) -> Result<BinaryOperatorType, expr::ExpError> {
+    fn token_to_binary_token_type(token: &token::Token) -> Result<expr::BinaryOperatorType, expr::ExpError> {
         match token.token_type {
-            BangEqual => Ok(BinaryOperatorType::NotEqual),
-            EqualEqual => Ok(BinaryOperatorType::EqualEqual),
-            Less => Ok(BinaryOperatorType::Less),
-            LessEqual => Ok(BinaryOperatorType::LessEqual),
-            Greater => Ok(BinaryOperatorType::Greater),
-            GreaterEqual => Ok(BinaryOperatorType::GreaterEqual),
-            Plus => Ok(BinaryOperatorType::Plus),
-            Minus => Ok(BinaryOperatorType::Minus),
-            Star => Ok(BinaryOperatorType::Star),
-            Slash => Ok(BinaryOperatorType::Slash),
+            token::TokenType::BangEqual => Ok(expr::BinaryOperatorType::NotEqual),
+            token::TokenType::EqualEqual => Ok(expr::BinaryOperatorType::EqualEqual),
+            token::TokenType::Less => Ok(expr::BinaryOperatorType::Less),
+            token::TokenType::LessEqual => Ok(expr::BinaryOperatorType::LessEqual),
+            token::TokenType::Greater => Ok(expr::BinaryOperatorType::Greater),
+            token::TokenType::GreaterEqual => Ok(expr::BinaryOperatorType::GreaterEqual),
+            token::TokenType::Plus => Ok(expr::BinaryOperatorType::Plus),
+            token::TokenType::Minus => Ok(expr::BinaryOperatorType::Minus),
+            token::TokenType::Star => Ok(expr::BinaryOperatorType::Star),
+            token::TokenType::Slash => Ok(expr::BinaryOperatorType::Slash),
             _ => Err(expr::ExpError::ConvertFailed {
-                expected: vec![BangEqual, EqualEqual, Less, LessEqual, Greater, GreaterEqual, Plus, Minus, Star, Slash],
+                expected: vec![token::TokenType::BangEqual, token::TokenType::EqualEqual, token::TokenType::Less,
+                               token::TokenType::LessEqual, token::TokenType::Greater, token::TokenType::GreaterEqual,
+                               token::TokenType::Plus, token::TokenType::Minus, token::TokenType::Star, token::TokenType::Slash],
                 found: token.clone(),
             }),
         }
     }
 
-    fn token_to_unary_token_type(token: &Token) -> Result<UnaryOperatorType, expr::ExpError> {
+    fn token_to_unary_token_type(token: &token::Token) -> Result<expr::UnaryOperatorType, expr::ExpError> {
         match token.token_type {
-            Minus => Ok(UnaryOperatorType::Minus),
-            Bang => Ok(UnaryOperatorType::Bang),
+            token::TokenType::Minus => Ok(expr::UnaryOperatorType::Minus),
+            token::TokenType::Bang => Ok(expr::UnaryOperatorType::Bang),
             _ => Err(expr::ExpError::ConvertFailed {
-                expected: vec![Minus, Bang],
+                expected: vec![token::TokenType::Minus, token::TokenType::Bang],
                 found: token.clone(),
             }),
         }

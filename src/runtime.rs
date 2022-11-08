@@ -2,19 +2,21 @@ use std::{fs, io};
 use std::error::Error;
 use std::io::BufRead;
 
-use crate::process::{ast, interpreter, parser, scanner};
+use crate::process::{interpreter, parser, scanner};
 use crate::process::ast::Printer;
 use crate::process::interpreter::Interpreter;
 use crate::types::val::{InterpreterError, Value};
 
 pub struct Runtime {
     had_error: bool,
+    interpreter: interpreter::AstInterpreter,
 }
 
 impl Default for Runtime {
     fn default() -> Self {
         return Runtime {
-            had_error: false
+            had_error: false,
+            interpreter: interpreter::AstInterpreter::default(),
         };
     }
 }
@@ -38,11 +40,10 @@ impl Runtime {
     fn run(&mut self, file: String) {
         let tokens = scanner::scan_tokens(file);
         let expression = parser::Parser::new(tokens.unwrap()).parse();
-
         match expression {
             Ok(exp) => {
                 for ex in exp {
-                    match interpreter::AstInterpreter::default().visit_statement(&ex) {
+                    match self.interpreter.visit_statement(&ex) {
                         Ok(result) => {}
                         Err(e) => {
                             self.report(Box::new(e))

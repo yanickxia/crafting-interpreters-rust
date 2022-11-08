@@ -1,30 +1,38 @@
 use std::cmp::Ordering;
-use crate::types::{expr, val};
-use crate::types::expr::{BinaryOperatorType, Statement};
 
+use crate::process::environment;
+use crate::types::{expr, val};
 
 pub trait Interpreter {
-    fn visit_expression(&self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
-    fn visit_statement(&self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
+    fn visit_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
+    fn visit_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
 }
 
 #[derive(Default)]
-pub struct AstInterpreter {}
+pub struct AstInterpreter {
+    environment: environment::Environment,
+}
 
 impl Interpreter for AstInterpreter {
-    fn visit_statement(&self, expr: &Statement) -> Result<val::Value, val::InterpreterError> {
+    fn visit_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
         return match expr {
-            Statement::Expression(exp) => {
-                self.visit_expression(exp)
+            expr::Statement::Expression(exp) => {
+                self.visit_expression(exp);
+                Ok(val::Value::Nil)
             }
-            Statement::Print(exp) => {
+            expr::Statement::Print(exp) => {
                 println!("{:?}", self.visit_expression(exp));
+                Ok(val::Value::Nil)
+            }
+            expr::Statement::Var(name, var) => {
+                let value = self.visit_expression(var)?;
+                self.environment.define(name.to_string(), &value);
                 Ok(val::Value::Nil)
             }
         };
     }
 
-    fn visit_expression(&self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
+    fn visit_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
         match expr {
             expr::Expression::Literal(l) => {
                 match l {
@@ -53,19 +61,19 @@ impl Interpreter for AstInterpreter {
                 let left = self.visit_expression(left)?;
                 let right = self.visit_expression(right)?;
                 return match op.token_type {
-                    BinaryOperatorType::EqualEqual => {
+                    expr::BinaryOperatorType::EqualEqual => {
                         Ok(val::Value::Bool(left.eq(&right)))
                     }
-                    BinaryOperatorType::NotEqual => {
+                    expr::BinaryOperatorType::NotEqual => {
                         Ok(val::Value::Bool(!left.eq(&right)))
                     }
-                    BinaryOperatorType::Less => {
+                    expr::BinaryOperatorType::Less => {
                         match left.partial_cmp(&right) {
                             None => {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Less,
+                                    opt: expr::BinaryOperatorType::Less,
                                 })
                             }
                             Some(ord) => {
@@ -73,13 +81,13 @@ impl Interpreter for AstInterpreter {
                             }
                         }
                     }
-                    BinaryOperatorType::LessEqual => {
+                    expr::BinaryOperatorType::LessEqual => {
                         match left.partial_cmp(&right) {
                             None => {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::LessEqual,
+                                    opt: expr::BinaryOperatorType::LessEqual,
                                 })
                             }
                             Some(ord) => {
@@ -87,13 +95,13 @@ impl Interpreter for AstInterpreter {
                             }
                         }
                     }
-                    BinaryOperatorType::Greater => {
+                    expr::BinaryOperatorType::Greater => {
                         match left.partial_cmp(&right) {
                             None => {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Greater,
+                                    opt: expr::BinaryOperatorType::Greater,
                                 })
                             }
                             Some(ord) => {
@@ -101,13 +109,13 @@ impl Interpreter for AstInterpreter {
                             }
                         }
                     }
-                    BinaryOperatorType::GreaterEqual => {
+                    expr::BinaryOperatorType::GreaterEqual => {
                         match left.partial_cmp(&right) {
                             None => {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::GreaterEqual,
+                                    opt: expr::BinaryOperatorType::GreaterEqual,
                                 })
                             }
                             Some(ord) => {
@@ -115,7 +123,7 @@ impl Interpreter for AstInterpreter {
                             }
                         }
                     }
-                    BinaryOperatorType::Plus => {
+                    expr::BinaryOperatorType::Plus => {
                         match left {
                             val::Value::Number(x) => {
                                 match right {
@@ -126,7 +134,7 @@ impl Interpreter for AstInterpreter {
                                         Err(val::InterpreterError::OperatorNotMatch {
                                             left,
                                             right,
-                                            opt: BinaryOperatorType::Plus,
+                                            opt: expr::BinaryOperatorType::Plus,
                                         })
                                     }
                                 }
@@ -140,7 +148,7 @@ impl Interpreter for AstInterpreter {
                                         Err(val::InterpreterError::OperatorNotMatch {
                                             left: val::Value::String(x),
                                             right,
-                                            opt: BinaryOperatorType::Plus,
+                                            opt: expr::BinaryOperatorType::Plus,
                                         })
                                     }
                                 }
@@ -149,12 +157,12 @@ impl Interpreter for AstInterpreter {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Plus,
+                                    opt: expr::BinaryOperatorType::Plus,
                                 })
                             }
                         }
                     }
-                    BinaryOperatorType::Minus => {
+                    expr::BinaryOperatorType::Minus => {
                         match left {
                             val::Value::Number(x) => {
                                 match right {
@@ -165,7 +173,7 @@ impl Interpreter for AstInterpreter {
                                         Err(val::InterpreterError::OperatorNotMatch {
                                             left,
                                             right,
-                                            opt: BinaryOperatorType::Minus,
+                                            opt: expr::BinaryOperatorType::Minus,
                                         })
                                     }
                                 }
@@ -174,12 +182,12 @@ impl Interpreter for AstInterpreter {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Minus,
+                                    opt: expr::BinaryOperatorType::Minus,
                                 })
                             }
                         }
                     }
-                    BinaryOperatorType::Star => {
+                    expr::BinaryOperatorType::Star => {
                         match left {
                             val::Value::Number(x) => {
                                 match right {
@@ -190,7 +198,7 @@ impl Interpreter for AstInterpreter {
                                         Err(val::InterpreterError::OperatorNotMatch {
                                             left,
                                             right,
-                                            opt: BinaryOperatorType::Minus,
+                                            opt: expr::BinaryOperatorType::Minus,
                                         })
                                     }
                                 }
@@ -199,12 +207,12 @@ impl Interpreter for AstInterpreter {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Star,
+                                    opt: expr::BinaryOperatorType::Star,
                                 })
                             }
                         }
                     }
-                    BinaryOperatorType::Slash => {
+                    expr::BinaryOperatorType::Slash => {
                         match left {
                             val::Value::Number(x) => {
                                 match right {
@@ -215,7 +223,7 @@ impl Interpreter for AstInterpreter {
                                         Err(val::InterpreterError::OperatorNotMatch {
                                             left,
                                             right,
-                                            opt: BinaryOperatorType::Slash,
+                                            opt: expr::BinaryOperatorType::Slash,
                                         })
                                     }
                                 }
@@ -224,7 +232,7 @@ impl Interpreter for AstInterpreter {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
                                     right,
-                                    opt: BinaryOperatorType::Slash,
+                                    opt: expr::BinaryOperatorType::Slash,
                                 })
                             }
                         }
@@ -266,8 +274,32 @@ impl Interpreter for AstInterpreter {
                     }
                 };
             }
-            _ => {
-                unimplemented!()
+
+            expr::Expression::Variable(name) => {
+                match self.environment.get(name) {
+                    None => {
+                        Err(val::InterpreterError::MissVariable {
+                            name: name.to_string()
+                        })
+                    }
+                    Some(val) => {
+                        Ok(val.clone())
+                    }
+                }
+            }
+
+            expr::Expression::Assign(name, expr) => {
+                let val = self.visit_expression(expr)?;
+                return match self.environment.assign(name.to_string(), &val) {
+                    Ok(_) => {
+                        Ok(val)
+                    }
+                    Err(_) => {
+                        Err(val::InterpreterError::MissVariable {
+                            name: name.to_string()
+                        })
+                    }
+                };
             }
         }
     }
