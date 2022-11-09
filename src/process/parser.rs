@@ -42,7 +42,20 @@ impl Parser {
         if self.match_token(vec![token::TokenType::Print]) {
             return self.print_statement();
         }
+        if self.match_token(vec![token::TokenType::LeftBrace]) {
+            return self.block();
+        }
         return self.expression_statement();
+    }
+
+    pub fn block(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let mut statements = vec![];
+        while !self.check(token::TokenType::RightBrace) && !self.at_end() {
+            let statement = self.declaration()?;
+            statements.push(statement)
+        }
+        self.consume(token::TokenType::RightBrace, "Expect '}' after expression.")?;
+        return Ok(expr::Statement::Block(statements));
     }
 
     pub fn print_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {

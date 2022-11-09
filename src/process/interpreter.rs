@@ -13,11 +13,33 @@ pub struct AstInterpreter {
     environment: environment::Environment,
 }
 
+impl AstInterpreter {
+    fn execute(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
+        return self.visit_statement(expr);
+    }
+
+    fn execute_block(&mut self, sts: &Vec<expr::Statement>, env: environment::Environment)
+                     -> Result<val::Value, val::InterpreterError> {
+        let previous = self.environment.clone();
+        self.environment = env;
+        for st in sts {
+            match self.execute(st) {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(val::InterpreterError::ExecuteError);
+                }
+            }
+        }
+        self.environment = previous.clone();
+        return Ok(val::Value::Nil);
+    }
+}
+
 impl Interpreter for AstInterpreter {
     fn visit_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
         return match expr {
             expr::Statement::Expression(exp) => {
-                self.visit_expression(exp);
+                self.visit_expression(exp)?;
                 Ok(val::Value::Nil)
             }
             expr::Statement::Print(exp) => {
@@ -29,8 +51,14 @@ impl Interpreter for AstInterpreter {
                 self.environment.define(name.to_string(), &value);
                 Ok(val::Value::Nil)
             }
+            expr::Statement::Block(sts) => {
+                let new_env = environment::Environment::with_enclosing(&self.environment);
+                self.execute_block(sts, new_env)?;
+                Ok(val::Value::Nil)
+            }
         };
     }
+
 
     fn visit_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
         match expr {

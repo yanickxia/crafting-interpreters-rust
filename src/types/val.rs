@@ -99,6 +99,7 @@ pub enum InterpreterError {
     MissVariable {
         name: String
     },
+    ExecuteError,
 }
 
 impl Display for InterpreterError {
@@ -114,11 +115,14 @@ impl Display for InterpreterError {
                 "Left {:?} Right {:?} Operator {:?}, not match",
                 left, right, opt
             ),
-
             InterpreterError::MissVariable { name } => write!(
                 f,
                 "miss param name {}",
-                name)
+                name),
+            InterpreterError::ExecuteError => write!(
+                f,
+                "ExecuteError"
+            )
         }
     }
 }

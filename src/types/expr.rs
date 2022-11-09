@@ -144,4 +144,5 @@ pub enum Statement {
     Expression(Expression),
     Print(Expression),
     Var(String, Expression),
+    Block(Vec<Statement>),
 }

@@ -3,7 +3,6 @@ use std::error::Error;
 use std::io::BufRead;
 
 use crate::process::{interpreter, parser, scanner};
-use crate::process::ast::Printer;
 use crate::process::interpreter::Interpreter;
 use crate::types::val::{InterpreterError, Value};
 
