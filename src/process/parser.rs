@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-use std::ops::Deref;
 use crate::types::{expr, token};
 
 pub struct Parser {
@@ -48,6 +46,9 @@ impl Parser {
         if self.match_token(vec![token::TokenType::While]) {
             return self.while_statement();
         }
+        if self.match_token(vec![token::TokenType::For]) {
+            return self.for_statement();
+        }
         if self.match_token(vec![token::TokenType::LeftBrace]) {
             return self.block();
         }
@@ -57,6 +58,51 @@ impl Parser {
         return self.expression_statement();
     }
 
+    pub fn for_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        self.consume(token::TokenType::LeftParen, "Expect '(' after for expression.")?;
+
+        // initializer
+        let mut initializer = None;
+        if self.match_token(vec![token::TokenType::Semicolon])
+        {} else if self.match_token(vec![token::TokenType::Var]) {
+            initializer = Some(self.var_declaration()?);
+        } else {
+            initializer = Some(self.expression_statement()?);
+        }
+
+        // condition
+        let mut condition = expr::Expression::Literal(expr::Literal::True);
+        if !self.check(token::TokenType::Semicolon) {
+            condition = self.expression()?
+        }
+        self.consume(token::TokenType::Semicolon, "Expect ';' after loop expression.")?;
+
+        let mut increment = None;
+        if !self.check(token::TokenType::RightParen) {
+            increment = Some(self.expression()?)
+        }
+        self.consume(token::TokenType::RightParen, "Expect ')' after for expression.")?;
+
+        let mut body = self.statement()?;
+        match increment {
+            None => {}
+            Some(inc) => {
+                body = expr::Statement::Block(vec![body, expr::Statement::Expression(inc)])
+            }
+        }
+
+        body = expr::Statement::While(condition, Box::new(body));
+
+        match initializer {
+            None => {}
+            Some(init) => {
+                body = expr::Statement::Block(vec![init, body])
+            }
+        }
+
+        return Ok(body);
+    }
+
     pub fn while_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
         self.consume(token::TokenType::LeftParen, "Expect '(' after while expression.")?;
         let condition = self.expression()?;
@@ -64,7 +110,7 @@ impl Parser {
         let body = self.statement()?;
         Ok(expr::Statement::While(condition, Box::new(body)))
     }
-    
+
     pub fn if_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
         self.consume(token::TokenType::LeftParen, "Expect '(' after if expression.")?;
         let condition = self.expression()?;

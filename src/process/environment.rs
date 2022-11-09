@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use crate::types::{env, val};
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Environment {
     values: HashMap<String, val::Value>,
-    enclosing: Option<Box<Environment>>,
+    pub enclosing: Option<Box<Environment>>,
 }
 
 
 impl Environment {
-    pub fn with_enclosing(env: &Environment) -> Self {
+    pub fn with_enclosing(env: Environment) -> Self {
         return Self {
             values: Default::default(),
-            enclosing: Some(Box::new(env.clone())),
+            enclosing: Some(Box::new(env)),
         };
     }
 
@@ -29,7 +29,7 @@ impl Environment {
                         None
                     }
                     Some(parent) => {
-                        parent.get(name)
+                        return parent.get(name);
                     }
                 }
             }

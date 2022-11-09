@@ -18,10 +18,8 @@ impl AstInterpreter {
         return self.visit_statement(expr);
     }
 
-    fn execute_block(&mut self, sts: &Vec<expr::Statement>, env: environment::Environment)
-                     -> Result<val::Value, val::InterpreterError> {
-        let previous = self.environment.clone();
-        self.environment = env;
+    fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<val::Value, val::InterpreterError> {
+        self.environment = environment::Environment::with_enclosing(self.environment.clone());
         for st in sts {
             match self.execute(st) {
                 Ok(_) => {}
@@ -30,7 +28,16 @@ impl AstInterpreter {
                 }
             }
         }
-        self.environment = previous.clone();
+
+        match &self.environment.enclosing {
+            None => {
+                panic!("impossible, always has previous");
+            }
+            Some(previous) => {
+                self.environment = *previous.clone()
+            }
+        }
+
         return Ok(val::Value::Nil);
     }
 }
@@ -52,8 +59,7 @@ impl Interpreter for AstInterpreter {
                 Ok(val::Value::Nil)
             }
             expr::Statement::Block(sts) => {
-                let new_env = environment::Environment::with_enclosing(&self.environment);
-                self.execute_block(sts, new_env)?;
+                self.execute_block(sts)?;
                 Ok(val::Value::Nil)
             }
             expr::Statement::If(condition, then, els) => {
