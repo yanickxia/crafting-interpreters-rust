@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+use std::ops::Deref;
 use crate::types::{expr, token};
 
 pub struct Parser {
@@ -10,6 +12,7 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
+    // http://www.craftinginterpreters.com/appendix-i.html
     pub fn parse(&mut self) -> Result<Vec<expr::Statement>, expr::ExpError> {
         let mut statements = vec![];
         while !self.at_end() {
@@ -42,10 +45,39 @@ impl Parser {
         if self.match_token(vec![token::TokenType::Print]) {
             return self.print_statement();
         }
+        if self.match_token(vec![token::TokenType::While]) {
+            return self.while_statement();
+        }
         if self.match_token(vec![token::TokenType::LeftBrace]) {
             return self.block();
         }
+        if self.match_token(vec![token::TokenType::If]) {
+            return self.if_statement();
+        }
         return self.expression_statement();
+    }
+
+    pub fn while_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        self.consume(token::TokenType::LeftParen, "Expect '(' after while expression.")?;
+        let condition = self.expression()?;
+        self.consume(token::TokenType::RightParen, "Expect ')' after while expression.")?;
+        let body = self.statement()?;
+        Ok(expr::Statement::While(condition, Box::new(body)))
+    }
+    
+    pub fn if_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        self.consume(token::TokenType::LeftParen, "Expect '(' after if expression.")?;
+        let condition = self.expression()?;
+        self.consume(token::TokenType::RightParen, "Expect ')' after if expression.")?;
+
+        let then_branch = self.statement()?;
+        let mut else_branch = None;
+        if self.match_token(vec![token::TokenType::Else]) {
+            let else_statement = self.statement()?;
+            else_branch = Some(Box::new(else_statement))
+        }
+
+        return Ok(expr::Statement::If(condition, Box::new(then_branch), else_branch));
     }
 
     pub fn block(&mut self) -> Result<expr::Statement, expr::ExpError> {
@@ -95,7 +127,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<expr::Expression, expr::ExpError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
         if self.match_token(vec![token::TokenType::Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
@@ -114,6 +146,27 @@ impl Parser {
 
         return Ok(expr);
     }
+
+    fn or(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        let mut expr = self.and()?;
+        while self.match_token(vec![token::TokenType::Or]) {
+            let operator = self.previous().clone();
+            let right = self.and()?;
+            expr = expr::Expression::Logical(Box::new(expr), expr::LogicalOperatorType::Or, Box::new(right))
+        }
+        return Ok(expr);
+    }
+
+    fn and(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        let mut expr = self.equality()?;
+        while self.match_token(vec![token::TokenType::And]) {
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+            expr = expr::Expression::Logical(Box::new(expr), expr::LogicalOperatorType::And, Box::new(right))
+        }
+        return Ok(expr);
+    }
+
 
     fn equality(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.comparison()?;

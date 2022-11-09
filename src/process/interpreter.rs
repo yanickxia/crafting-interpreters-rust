@@ -56,6 +56,44 @@ impl Interpreter for AstInterpreter {
                 self.execute_block(sts, new_env)?;
                 Ok(val::Value::Nil)
             }
+            expr::Statement::If(condition, then, els) => {
+                let condition = self.visit_expression(condition)?;
+                return match condition {
+                    val::Value::Bool(b) => {
+                        if b {
+                            return self.visit_statement(then);
+                        }
+                        match els {
+                            None => {
+                                Ok(val::Value::Nil)
+                            }
+                            Some(sts) => {
+                                self.visit_statement(sts)
+                            }
+                        }
+                    }
+                    _ => {
+                        Err(val::InterpreterError::ExecuteError)
+                    }
+                };
+            }
+            expr::Statement::While(condition, sts) => {
+                loop {
+                    let condition = self.visit_expression(condition)?;
+                    match condition {
+                        val::Value::Bool(b) => {
+                            if b {
+                                self.visit_statement(sts)?;
+                            } else {
+                                return Ok(val::Value::Nil);
+                            }
+                        }
+                        _ => {
+                            return Err(val::InterpreterError::ExecuteError);
+                        }
+                    }
+                }
+            }
         };
     }
 
@@ -328,6 +366,33 @@ impl Interpreter for AstInterpreter {
                         })
                     }
                 };
+            }
+            expr::Expression::Logical(left, opt, right) => {
+                let l = self.visit_expression(left)?;
+                match opt {
+                    expr::LogicalOperatorType::And => {
+                        match l {
+                            val::Value::Bool(b) => {
+                                if !b {
+                                    return Ok(l);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    expr::LogicalOperatorType::Or => {
+                        match l {
+                            val::Value::Bool(b) => {
+                                if b {
+                                    return Ok(l);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                };
+
+                return self.visit_expression(right);
             }
         }
     }

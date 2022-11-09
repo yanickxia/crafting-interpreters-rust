@@ -74,6 +74,7 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Variable(String),
     Assign(String, Box<Expression>),
+    Logical(Box<Expression>, LogicalOperatorType, Box<Expression>),
 }
 
 impl ast::Accept for Expression {
@@ -107,6 +108,7 @@ pub struct BinaryOp {
     // pub col: i64,
 }
 
+
 #[derive(Debug, Copy, Clone)]
 pub enum UnaryOperatorType {
     Minus,
@@ -117,6 +119,12 @@ impl Display for UnaryOperatorType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum LogicalOperatorType {
+    And,
+    Or,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -145,4 +153,6 @@ pub enum Statement {
     Print(Expression),
     Var(String, Expression),
     Block(Vec<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Expression, Box<Statement>),
 }
