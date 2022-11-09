@@ -1,24 +1,28 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use crate::process::environment;
-use crate::types::{expr, val};
+use crate::types::{expr, func, val};
+use crate::types::func::Callable;
 
 pub trait Interpreter {
-    fn visit_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
-    fn visit_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
+    fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
+    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
 }
 
 #[derive(Default)]
 pub struct AstInterpreter {
-    environment: environment::Environment,
+    pub environment: environment::Environment,
+    pub lox_functions: HashMap<usize, func::LoxFunction>,
+    counter: usize,
 }
 
 impl AstInterpreter {
-    fn execute(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
-        return self.visit_statement(expr);
+    pub fn execute(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
+        return self.interpret_statement(expr);
     }
 
-    fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<val::Value, val::InterpreterError> {
+    pub fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<val::Value, val::InterpreterError> {
         self.environment = environment::Environment::with_enclosing(self.environment.clone());
         for st in sts {
             match self.execute(st) {
@@ -40,21 +44,66 @@ impl AstInterpreter {
 
         return Ok(val::Value::Nil);
     }
+
+    fn cast_callable(interpreter: &Self, value: &val::Value) -> Option<Box<dyn func::Callable>> {
+        match value {
+            val::Value::LoxFunc(id) => {
+                let f = interpreter.get_lox_function(*id);
+                Some(Box::new(f.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    fn next_id(&mut self) -> usize {
+        let res = self.counter;
+        self.counter += 1;
+        res
+    }
+
+
+    pub fn get_lox_function(&self, id: usize) -> &func::LoxFunction {
+        match self.lox_functions.get(&id) {
+            Some(func) => func,
+            None => panic!(
+                "Internal interpreter error! couldn't find an function with id {}.",
+                id
+            ),
+        }
+    }
 }
 
 impl Interpreter for AstInterpreter {
-    fn visit_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
+    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
         return match expr {
+            expr::Statement::Function(name, params, body) => {
+                let func_id = self.next_id();
+
+                let lox_function = func::LoxFunction {
+                    id: func_id,
+                    name: name.to_string(),
+                    parameters: params.clone(),
+                    body: *body.clone(),
+                    // closure: self.environment.clone(),
+                };
+
+                self.lox_functions.insert(func_id, lox_function);
+
+                // env 里面要放入这个函数，不然后面找不到
+                self.environment.define(name.to_string(), &val::Value::LoxFunc(func_id));
+
+                Ok(val::Value::Nil)
+            }
             expr::Statement::Expression(exp) => {
-                self.visit_expression(exp)?;
+                self.interpret_expression(exp)?;
                 Ok(val::Value::Nil)
             }
             expr::Statement::Print(exp) => {
-                println!("{:?}", self.visit_expression(exp));
+                println!("{:?}", self.interpret_expression(exp));
                 Ok(val::Value::Nil)
             }
             expr::Statement::Var(name, var) => {
-                let value = self.visit_expression(var)?;
+                let value = self.interpret_expression(var)?;
                 self.environment.define(name.to_string(), &value);
                 Ok(val::Value::Nil)
             }
@@ -63,18 +112,18 @@ impl Interpreter for AstInterpreter {
                 Ok(val::Value::Nil)
             }
             expr::Statement::If(condition, then, els) => {
-                let condition = self.visit_expression(condition)?;
+                let condition = self.interpret_expression(condition)?;
                 return match condition {
                     val::Value::Bool(b) => {
                         if b {
-                            return self.visit_statement(then);
+                            return self.interpret_statement(then);
                         }
                         match els {
                             None => {
                                 Ok(val::Value::Nil)
                             }
                             Some(sts) => {
-                                self.visit_statement(sts)
+                                self.interpret_statement(sts)
                             }
                         }
                     }
@@ -85,11 +134,11 @@ impl Interpreter for AstInterpreter {
             }
             expr::Statement::While(condition, sts) => {
                 loop {
-                    let condition = self.visit_expression(condition)?;
+                    let condition = self.interpret_expression(condition)?;
                     match condition {
                         val::Value::Bool(b) => {
                             if b {
-                                self.visit_statement(sts)?;
+                                self.interpret_statement(sts)?;
                             } else {
                                 return Ok(val::Value::Nil);
                             }
@@ -104,7 +153,7 @@ impl Interpreter for AstInterpreter {
     }
 
 
-    fn visit_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
+    fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
         match expr {
             expr::Expression::Literal(l) => {
                 match l {
@@ -126,12 +175,12 @@ impl Interpreter for AstInterpreter {
                 }
             }
             expr::Expression::Grouping(expr) => {
-                self.visit_expression(expr)
+                self.interpret_expression(expr)
             }
 
             expr::Expression::Binary(left, op, right) => {
-                let left = self.visit_expression(left)?;
-                let right = self.visit_expression(right)?;
+                let left = self.interpret_expression(left)?;
+                let right = self.interpret_expression(right)?;
                 return match op.token_type {
                     expr::BinaryOperatorType::EqualEqual => {
                         Ok(val::Value::Bool(left.eq(&right)))
@@ -313,7 +362,7 @@ impl Interpreter for AstInterpreter {
             }
 
             expr::Expression::Unary(opt, expr) => {
-                let value = self.visit_expression(expr)?;
+                let value = self.interpret_expression(expr)?;
                 return match opt.token_type {
                     expr::UnaryOperatorType::Minus => {
                         match value {
@@ -361,7 +410,7 @@ impl Interpreter for AstInterpreter {
             }
 
             expr::Expression::Assign(name, expr) => {
-                let val = self.visit_expression(expr)?;
+                let val = self.interpret_expression(expr)?;
                 return match self.environment.assign(name.to_string(), &val) {
                     Ok(_) => {
                         Ok(val)
@@ -374,7 +423,7 @@ impl Interpreter for AstInterpreter {
                 };
             }
             expr::Expression::Logical(left, opt, right) => {
-                let l = self.visit_expression(left)?;
+                let l = self.interpret_expression(left)?;
                 match opt {
                     expr::LogicalOperatorType::And => {
                         match l {
@@ -398,7 +447,23 @@ impl Interpreter for AstInterpreter {
                     }
                 };
 
-                return self.visit_expression(right);
+                return self.interpret_expression(right);
+            }
+            expr::Expression::Call(callee, name, args) => {
+                let callee = self.interpret_expression(callee)?;
+                let mut arguments = vec![];
+                for a in args {
+                    arguments.push(self.interpret_expression(a)?);
+                }
+
+                return match Self::cast_callable(self, &callee) {
+                    None => {
+                        Err(val::InterpreterError::ExecuteError)
+                    }
+                    Some(callable) => {
+                        callable.call(self, arguments)
+                    }
+                };
             }
         }
     }

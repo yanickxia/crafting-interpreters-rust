@@ -25,11 +25,16 @@ pub enum ExpError {
     AssignmentFailed {
         name: String
     },
+    TooManyArgs,
 }
 
 impl Display for ExpError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self {
+            ExpError::TooManyArgs => write!(
+                f,
+                "too many args, can't more than 255"
+            ),
             ExpError::UnexpectedToken(tok) => write!(
                 f,
                 "Unexpected token {:?} at line={}",
@@ -66,16 +71,6 @@ impl Display for ExpError {
 
 impl Error for ExpError {}
 
-
-pub enum Expression {
-    Literal(Literal),
-    Unary(UnaryOp, Box<Expression>),
-    Binary(Box<Expression>, BinaryOp, Box<Expression>),
-    Grouping(Box<Expression>),
-    Variable(String),
-    Assign(String, Box<Expression>),
-    Logical(Box<Expression>, LogicalOperatorType, Box<Expression>),
-}
 
 impl ast::Accept for Expression {
     fn accept(&self, printer: &dyn Printer) -> String {
@@ -147,9 +142,22 @@ impl Display for BinaryOperatorType {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum Expression {
+    Literal(Literal),
+    Unary(UnaryOp, Box<Expression>),
+    Binary(Box<Expression>, BinaryOp, Box<Expression>),
+    Call(Box<Expression>, String, Vec<Expression>),
+    Grouping(Box<Expression>),
+    Variable(String),
+    Assign(String, Box<Expression>),
+    Logical(Box<Expression>, LogicalOperatorType, Box<Expression>),
+}
 
+#[derive(Clone, Debug)]
 pub enum Statement {
     Expression(Expression),
+    Function(String, Vec<String>, Box<Statement>),
     Print(Expression),
     Var(String, Expression),
     Block(Vec<Statement>),

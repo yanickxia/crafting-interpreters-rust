@@ -42,7 +42,7 @@ impl Runtime {
         match expression {
             Ok(exp) => {
                 for ex in exp {
-                    match self.interpreter.visit_statement(&ex) {
+                    match self.interpreter.interpret_statement(&ex) {
                         Ok(result) => {}
                         Err(e) => {
                             self.report(Box::new(e))

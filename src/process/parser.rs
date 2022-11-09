@@ -22,10 +22,37 @@ impl Parser {
     }
 
     pub fn declaration(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        if self.match_token(vec![token::TokenType::Fun]) {
+            return self.function("function");
+        }
         if self.match_token(vec![token::TokenType::Var]) {
             return self.var_declaration();
         }
         return self.statement();
+    }
+
+    pub fn function(&mut self, kind: &str) -> Result<expr::Statement, expr::ExpError> {
+        let name = self.consume(token::TokenType::Identifier, format!("{} {} {}", "Expect", kind, "name").as_str())?.clone();
+        self.consume(token::TokenType::LeftParen, format!("{} {} {}", "Expect '{' before", kind, "name").as_str())?;
+        let mut parameters = vec![];
+
+        if !self.check(token::TokenType::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    return Err(expr::ExpError::TooManyArgs);
+                }
+                parameters.push(self.consume(token::TokenType::Identifier, "Expect parameter name.")?.clone().lexeme);
+                if !self.match_token(vec![token::TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(token::TokenType::RightParen, "Expect ')' after parameters.")?;
+        self.consume(token::TokenType::LeftBrace, format!("{} {} {}", "Expect '{' before", kind, "name").as_str())?;
+
+        let body = self.block()?;
+        return Ok(expr::Statement::Function(name.lexeme.clone(), parameters, Box::new(body)));
     }
 
     pub fn var_declaration(&mut self) -> Result<expr::Statement, expr::ExpError> {
@@ -196,7 +223,6 @@ impl Parser {
     fn or(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.and()?;
         while self.match_token(vec![token::TokenType::Or]) {
-            let operator = self.previous().clone();
             let right = self.and()?;
             expr = expr::Expression::Logical(Box::new(expr), expr::LogicalOperatorType::Or, Box::new(right))
         }
@@ -206,7 +232,6 @@ impl Parser {
     fn and(&mut self) -> Result<expr::Expression, expr::ExpError> {
         let mut expr = self.equality()?;
         while self.match_token(vec![token::TokenType::And]) {
-            let operator = self.previous().clone();
             let right = self.equality()?;
             expr = expr::Expression::Logical(Box::new(expr), expr::LogicalOperatorType::And, Box::new(right))
         }
@@ -272,8 +297,42 @@ impl Parser {
                 token_type: Self::token_to_unary_token_type(&operator)?
             }, Box::new(right)));
         }
-        return self.primary();
+        return self.call();
     }
+
+
+    fn call(&mut self) -> Result<expr::Expression, expr::ExpError> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.match_token(vec![token::TokenType::LeftParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        return Ok(expr);
+    }
+
+    fn finish_call(&mut self, callee: expr::Expression) -> Result<expr::Expression, expr::ExpError> {
+        let mut arguments = vec![];
+        if !self.check(token::TokenType::LeftParen) {
+            loop {
+                if arguments.len() >= 255 {
+                    return Err(expr::ExpError::TooManyArgs);
+                }
+
+                arguments.push(self.expression()?);
+                if !self.match_token(vec![token::TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        let paren = self.consume(token::TokenType::RightParen, "Expect ')' after arguments.")?;
+        return Ok(expr::Expression::Call(Box::new(callee), paren.lexeme.to_string(), arguments));
+    }
+
 
     fn primary(&mut self) -> Result<expr::Expression, expr::ExpError> {
         if self.match_token(vec![token::TokenType::False]) {

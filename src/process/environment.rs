@@ -4,7 +4,7 @@ use crate::types::{env, val};
 
 #[derive(Default, Clone, Debug)]
 pub struct Environment {
-    values: HashMap<String, val::Value>,
+    pub values: HashMap<String, val::Value>,
     pub enclosing: Option<Box<Environment>>,
 }
 

@@ -10,6 +10,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Nil,
+    LoxFunc(usize),
 }
 
 impl PartialOrd for Value {
@@ -40,6 +41,9 @@ impl PartialOrd for Value {
                 match other {
                     _ => { None }
                 }
+            }
+            _ => {
+                None
             }
         };
     }
@@ -79,6 +83,9 @@ impl PartialEq for Value {
                     }
                     _ => { false }
                 }
+            }
+            _ => {
+                false
             }
         };
     }
