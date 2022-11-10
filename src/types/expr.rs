@@ -159,6 +159,7 @@ pub enum Statement {
     Expression(Expression),
     Function(String, Vec<String>, Box<Statement>),
     Print(Expression),
+    Return(String, Option<Expression>),
     Var(String, Expression),
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),

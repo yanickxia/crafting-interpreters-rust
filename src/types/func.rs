@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::process::{environment, interpreter};
 use crate::types::{expr, val};
+use crate::types::val::Value;
 
 pub trait Callable {
     fn arity(&self, interpreter: &interpreter::AstInterpreter) -> usize;
@@ -15,8 +16,7 @@ pub struct LoxFunction {
     pub name: String,
     pub parameters: Vec<String>,
     pub body: expr::Statement,
-    // lambda 闭包
-    // pub closure: environment::Environment,
+    pub closure: environment::Environment,
 }
 
 impl Callable for LoxFunction {
@@ -40,13 +40,22 @@ impl Callable for LoxFunction {
             .collect();
 
         let saved_env = interpreter.environment.clone();
-        let mut new_env = environment::Environment::with_enclosing(interpreter.environment.clone());
+        let mut new_env = environment::Environment::with_enclosing(self.closure.clone());
         new_env.values.extend(args_env);
 
         interpreter.environment = new_env;
-        println!("excute env {:?}", &interpreter.environment);
-        let ret = interpreter.execute(&self.body)?;
+
+        interpreter.execute(&self.body)?;
         interpreter.environment = saved_env;
-        Ok(ret)
+
+        return match interpreter.ret.clone() {
+            None => {
+                Ok(val::Value::Nil)
+            }
+            Some(ret) => {
+                interpreter.ret = None;
+                Ok(ret)
+            }
+        };
     }
 }

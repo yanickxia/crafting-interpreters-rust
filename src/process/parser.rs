@@ -70,6 +70,9 @@ impl Parser {
         if self.match_token(vec![token::TokenType::Print]) {
             return self.print_statement();
         }
+        if self.match_token(vec![token::TokenType::Return]) {
+            return self.return_statement();
+        }
         if self.match_token(vec![token::TokenType::While]) {
             return self.while_statement();
         }
@@ -83,6 +86,19 @@ impl Parser {
             return self.if_statement();
         }
         return self.expression_statement();
+    }
+
+    pub fn return_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let token = self.previous().clone();
+        let mut expr = None;
+
+        if !self.check(token::TokenType::Semicolon) {
+            expr = Some(self.expression()?)
+        }
+
+        self.consume(token::TokenType::Semicolon, "Expect ';' after return expression.")?;
+
+        Ok(expr::Statement::Return(token.lexeme.to_string(), expr))
     }
 
     pub fn for_statement(&mut self) -> Result<expr::Statement, expr::ExpError> {
@@ -317,7 +333,7 @@ impl Parser {
 
     fn finish_call(&mut self, callee: expr::Expression) -> Result<expr::Expression, expr::ExpError> {
         let mut arguments = vec![];
-        if !self.check(token::TokenType::LeftParen) {
+        if !self.check(token::TokenType::RightParen) {
             loop {
                 if arguments.len() >= 255 {
                     return Err(expr::ExpError::TooManyArgs);

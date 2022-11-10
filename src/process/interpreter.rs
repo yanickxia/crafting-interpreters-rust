@@ -3,11 +3,10 @@ use std::collections::HashMap;
 
 use crate::process::environment;
 use crate::types::{expr, func, val};
-use crate::types::func::Callable;
 
 pub trait Interpreter {
     fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
-    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError>;
+    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError>;
 }
 
 #[derive(Default)]
@@ -15,20 +14,31 @@ pub struct AstInterpreter {
     pub environment: environment::Environment,
     pub lox_functions: HashMap<usize, func::LoxFunction>,
     counter: usize,
+    pub ret: Option<val::Value>,
 }
 
 impl AstInterpreter {
-    pub fn execute(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
-        return self.interpret_statement(expr);
+    pub fn execute(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
+        self.interpret_statement(expr)?;
+        Ok(())
     }
 
-    pub fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<val::Value, val::InterpreterError> {
+    pub fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<(), val::InterpreterError> {
+        // everytime execute, should be new env for block
         self.environment = environment::Environment::with_enclosing(self.environment.clone());
         for st in sts {
             match self.execute(st) {
-                Ok(_) => {}
-                Err(_) => {
-                    return Err(val::InterpreterError::ExecuteError);
+                Ok(_) => {
+                    match self.ret {
+                        None => {}
+                        Some(_) => {
+                            // fast return
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(val::InterpreterError::ExecuteError(Box::new(e)));
                 }
             }
         }
@@ -41,8 +51,7 @@ impl AstInterpreter {
                 self.environment = *previous.clone()
             }
         }
-
-        return Ok(val::Value::Nil);
+        Ok(())
     }
 
     fn cast_callable(interpreter: &Self, value: &val::Value) -> Option<Box<dyn func::Callable>> {
@@ -74,42 +83,51 @@ impl AstInterpreter {
 }
 
 impl Interpreter for AstInterpreter {
-    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<val::Value, val::InterpreterError> {
+    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
         return match expr {
+            expr::Statement::Return(_, expr) => {
+                match expr {
+                    Some(expr) => {
+                        self.ret = Some(self.interpret_expression(expr)?);
+                    }
+                    _ => {}
+                }
+                Ok(())
+            }
             expr::Statement::Function(name, params, body) => {
                 let func_id = self.next_id();
+
+                // env 里面要放入这个函数，不然后面找不到
+                self.environment.define(name.to_string(), &val::Value::LoxFunc(func_id));
 
                 let lox_function = func::LoxFunction {
                     id: func_id,
                     name: name.to_string(),
                     parameters: params.clone(),
                     body: *body.clone(),
-                    // closure: self.environment.clone(),
+                    closure: self.environment.clone(),
                 };
 
                 self.lox_functions.insert(func_id, lox_function);
-
-                // env 里面要放入这个函数，不然后面找不到
-                self.environment.define(name.to_string(), &val::Value::LoxFunc(func_id));
-
-                Ok(val::Value::Nil)
+                
+                Ok(())
             }
             expr::Statement::Expression(exp) => {
                 self.interpret_expression(exp)?;
-                Ok(val::Value::Nil)
+                Ok(())
             }
             expr::Statement::Print(exp) => {
                 println!("{:?}", self.interpret_expression(exp));
-                Ok(val::Value::Nil)
+                Ok(())
             }
             expr::Statement::Var(name, var) => {
                 let value = self.interpret_expression(var)?;
                 self.environment.define(name.to_string(), &value);
-                Ok(val::Value::Nil)
+                Ok(())
             }
             expr::Statement::Block(sts) => {
                 self.execute_block(sts)?;
-                Ok(val::Value::Nil)
+                Ok(())
             }
             expr::Statement::If(condition, then, els) => {
                 let condition = self.interpret_expression(condition)?;
@@ -120,7 +138,7 @@ impl Interpreter for AstInterpreter {
                         }
                         match els {
                             None => {
-                                Ok(val::Value::Nil)
+                                Ok(())
                             }
                             Some(sts) => {
                                 self.interpret_statement(sts)
@@ -128,7 +146,7 @@ impl Interpreter for AstInterpreter {
                         }
                     }
                     _ => {
-                        Err(val::InterpreterError::ExecuteError)
+                        panic!("should be bool")
                     }
                 };
             }
@@ -140,11 +158,11 @@ impl Interpreter for AstInterpreter {
                             if b {
                                 self.interpret_statement(sts)?;
                             } else {
-                                return Ok(val::Value::Nil);
+                                return Ok(());
                             }
                         }
                         _ => {
-                            return Err(val::InterpreterError::ExecuteError);
+                            panic!("should be bool")
                         }
                     }
                 }
@@ -458,7 +476,7 @@ impl Interpreter for AstInterpreter {
 
                 return match Self::cast_callable(self, &callee) {
                     None => {
-                        Err(val::InterpreterError::ExecuteError)
+                        panic!("should be callable")
                     }
                     Some(callable) => {
                         callable.call(self, arguments)

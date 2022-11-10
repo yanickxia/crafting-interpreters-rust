@@ -11,6 +11,9 @@ pub enum Value {
     Bool(bool),
     Nil,
     LoxFunc(usize),
+
+    // for fast return
+    Ret(Box<Value>),
 }
 
 impl PartialOrd for Value {
@@ -106,7 +109,7 @@ pub enum InterpreterError {
     MissVariable {
         name: String
     },
-    ExecuteError,
+    ExecuteError(Box<InterpreterError>),
 }
 
 impl Display for InterpreterError {
@@ -126,9 +129,10 @@ impl Display for InterpreterError {
                 f,
                 "miss param name {}",
                 name),
-            InterpreterError::ExecuteError => write!(
+            InterpreterError::ExecuteError(inner) => write!(
                 f,
-                "ExecuteError"
+                "ExecuteError, case {:?}",
+                inner
             )
         }
     }
