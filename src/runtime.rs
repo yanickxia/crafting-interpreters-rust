@@ -8,14 +8,14 @@ use crate::types::val::{InterpreterError, Value};
 
 pub struct Runtime {
     had_error: bool,
-    interpreter: interpreter::AstInterpreter,
+    interpreter: interpreter::Interpreter,
 }
 
 impl Default for Runtime {
     fn default() -> Self {
         return Runtime {
             had_error: false,
-            interpreter: interpreter::AstInterpreter::default(),
+            interpreter: interpreter::Interpreter::default(),
         };
     }
 }

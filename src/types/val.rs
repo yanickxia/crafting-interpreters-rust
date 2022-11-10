@@ -110,11 +110,17 @@ pub enum InterpreterError {
         name: String
     },
     ExecuteError(Box<InterpreterError>),
+    SimpleError(String),
 }
 
 impl Display for InterpreterError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            InterpreterError::SimpleError(message) => write!(
+                f,
+                "Simple Error: {}",
+                message
+            ),
             InterpreterError::TypeNotMatch { expected, found } => write!(
                 f,
                 "Expected {:?} but found {:?}",

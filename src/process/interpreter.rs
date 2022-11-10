@@ -4,20 +4,15 @@ use std::collections::HashMap;
 use crate::process::environment;
 use crate::types::{expr, func, val};
 
-pub trait Interpreter {
-    fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError>;
-    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError>;
-}
-
 #[derive(Default)]
-pub struct AstInterpreter {
+pub struct Interpreter {
     pub environment: environment::Environment,
     pub lox_functions: HashMap<usize, func::LoxFunction>,
     counter: usize,
     pub ret: Option<val::Value>,
 }
 
-impl AstInterpreter {
+impl Interpreter {
     pub fn execute(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
         self.interpret_statement(expr)?;
         Ok(())
@@ -80,10 +75,8 @@ impl AstInterpreter {
             ),
         }
     }
-}
 
-impl Interpreter for AstInterpreter {
-    fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
+    pub fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
         return match expr {
             expr::Statement::Return(_, expr) => {
                 match expr {
@@ -109,7 +102,7 @@ impl Interpreter for AstInterpreter {
                 };
 
                 self.lox_functions.insert(func_id, lox_function);
-                
+
                 Ok(())
             }
             expr::Statement::Expression(exp) => {

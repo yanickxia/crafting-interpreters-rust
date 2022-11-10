@@ -2,11 +2,10 @@ use std::collections::HashMap;
 
 use crate::process::{environment, interpreter};
 use crate::types::{expr, val};
-use crate::types::val::Value;
 
 pub trait Callable {
-    fn arity(&self, interpreter: &interpreter::AstInterpreter) -> usize;
-    fn call(&self, interpreter: &mut interpreter::AstInterpreter, args: Vec<val::Value>) -> Result<val::Value, val::InterpreterError>;
+    fn arity(&self, interpreter: &interpreter::Interpreter) -> usize;
+    fn call(&self, interpreter: &mut interpreter::Interpreter, args: Vec<val::Value>) -> Result<val::Value, val::InterpreterError>;
 }
 
 
@@ -20,11 +19,11 @@ pub struct LoxFunction {
 }
 
 impl Callable for LoxFunction {
-    fn arity(&self, interpreter: &interpreter::AstInterpreter) -> usize {
+    fn arity(&self, interpreter: &interpreter::Interpreter) -> usize {
         return self.parameters.len();
     }
 
-    fn call(&self, interpreter: &mut interpreter::AstInterpreter, args: Vec<val::Value>) -> Result<val::Value, val::InterpreterError> {
+    fn call(&self, interpreter: &mut interpreter::Interpreter, args: Vec<val::Value>) -> Result<val::Value, val::InterpreterError> {
         let args_env: HashMap<_, _> = self
             .parameters
             .iter()
