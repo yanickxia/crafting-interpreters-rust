@@ -3,10 +3,12 @@ use std::collections::HashMap;
 
 use crate::process::environment;
 use crate::types::{class, expr, func, val};
+use crate::types::val::Value;
 
 #[derive(Default)]
 pub struct Interpreter {
     pub environment: environment::Environment,
+    pub global: environment::Environment,
     pub lox_functions: HashMap<usize, func::LoxFunction>,
     pub lox_instances: HashMap<usize, class::LoxInstance>,
     counter: usize,
@@ -100,6 +102,7 @@ impl Interpreter {
                                 parameters: params.clone(),
                                 body: *body.clone(),
                                 closure: self.environment.clone(),
+                                bind: None,
                             };
                             self.lox_functions.insert(func_id, lox_function);
                             lox_class_methods.push(val::Value::LoxFunc(name.to_string(), func_id))
@@ -132,6 +135,7 @@ impl Interpreter {
                     parameters: params.clone(),
                     body: *body.clone(),
                     closure: self.environment.clone(),
+                    bind: None,
                 };
 
                 self.lox_functions.insert(func_id, lox_function);
@@ -196,9 +200,31 @@ impl Interpreter {
         };
     }
 
+    fn lookup(&self, name: String) -> Result<val::Value, val::InterpreterError> {
+        return match self.environment.get(name.as_str()) {
+            None => {
+                match self.global.get(name.as_str()) {
+                    None => {
+                        Err(val::InterpreterError::MissVariable {
+                            name
+                        })
+                    }
+                    Some(val) => {
+                        Ok(val.clone())
+                    }
+                }
+            }
+            Some(val) => {
+                Ok(val.clone())
+            }
+        };
+    }
 
     fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
         match expr {
+            expr::Expression::This(this) => {
+                self.lookup(this.to_string())
+            }
             expr::Expression::Set { object, variable, value } => {
                 let obj = self.interpret_expression(object)?;
                 let val = self.interpret_expression(value)?;
@@ -222,10 +248,10 @@ impl Interpreter {
             expr::Expression::Get { object, variable } => {
                 let obj = self.interpret_expression(object)?;
                 return match obj {
-                    val::Value::LoxInstance(id) => {
-                        return match self.lox_instances.get(&id) {
+                    val::Value::LoxInstance(instance_id) => {
+                        return match self.lox_instances.get(&instance_id) {
                             None => {
-                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", id)))
+                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", instance_id)))
                             }
                             Some(instance) => {
                                 match instance.get(variable.as_str()) {
@@ -233,7 +259,17 @@ impl Interpreter {
                                         Err(val::InterpreterError::SimpleError(format!("miss variable: {} in {:?}", variable.as_str(), instance)))
                                     }
                                     Some(val) => {
-                                        Ok(val.clone())
+                                        return match val {
+                                            // bind instance
+                                            val::Value::LoxFunc(_, ref func_id) => {
+                                                let lox_func = self.lox_functions.get_mut(func_id).unwrap();
+                                                lox_func.bind = Some(instance_id);
+                                                Ok(val.clone())
+                                            }
+                                            _ => {
+                                                Ok(val.clone())
+                                            }
+                                        };
                                     }
                                 }
                             }

@@ -420,8 +420,13 @@ impl Parser {
                 None => panic!("internal error in parser: when parsing string, found no  expr::Literal"),
             }
         }
+
         if self.match_token(vec![token::TokenType::Identifier]) {
             return Ok(expr::Expression::Variable(self.previous().lexeme.to_string()));
+        }
+
+        if self.match_token(vec![token::TokenType::This]) {
+            return Ok(expr::Expression::This(self.previous().lexeme.to_string()));
         }
 
         if self.match_token(vec![token::TokenType::LeftParen]) {
