@@ -4,3 +4,4 @@ pub mod expr;
 pub mod val;
 pub mod env;
 pub mod func;
+pub mod class;

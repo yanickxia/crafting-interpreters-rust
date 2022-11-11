@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-use crate::types::expr;
+use crate::types::{class, expr};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -11,6 +11,8 @@ pub enum Value {
     Bool(bool),
     Nil,
     LoxFunc(usize),
+    LoxClass(class::LoxClass),
+    LoxInstance(usize),
 
     // for fast return
     Ret(Box<Value>),

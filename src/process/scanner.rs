@@ -118,7 +118,7 @@ impl Scanner {
             "/" => {
                 if self.match_next("/") {
                     // A comment goes until the end of the line.
-                    while self.peek().is_some() && !self.is_at_end() {
+                    while self.peek().is_some() && self.peek().unwrap() != "\n" && !self.is_at_end() {
                         self.advance();
                     }
                 }

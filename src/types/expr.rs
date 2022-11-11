@@ -148,6 +148,15 @@ pub enum Expression {
     Unary(UnaryOp, Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Call(Box<Expression>, String, Vec<Expression>),
+    Get {
+        object: Box<Expression>,
+        variable: String,
+    },
+    Set {
+        object: Box<Expression>,
+        variable: String,
+        value: Box<Expression>,
+    },
     Grouping(Box<Expression>),
     Variable(String),
     Assign(String, Box<Expression>),
@@ -162,6 +171,10 @@ pub enum Statement {
     Return(String, Option<Expression>),
     Var(String, Expression),
     Block(Vec<Statement>),
+    Class {
+        name: String,
+        methods: Vec<Statement>,
+    },
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
 }

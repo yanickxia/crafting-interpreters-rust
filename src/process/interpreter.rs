@@ -2,12 +2,13 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use crate::process::environment;
-use crate::types::{expr, func, val};
+use crate::types::{class, expr, func, val};
 
 #[derive(Default)]
 pub struct Interpreter {
     pub environment: environment::Environment,
     pub lox_functions: HashMap<usize, func::LoxFunction>,
+    pub lox_instances: HashMap<usize, class::LoxInstance>,
     counter: usize,
     pub ret: Option<val::Value>,
 }
@@ -49,17 +50,20 @@ impl Interpreter {
         Ok(())
     }
 
-    fn cast_callable(interpreter: &Self, value: &val::Value) -> Option<Box<dyn func::Callable>> {
+    fn cast_callable(interpreter: &mut Self, value: &val::Value) -> Option<Box<dyn func::Callable>> {
         match value {
             val::Value::LoxFunc(id) => {
                 let f = interpreter.get_lox_function(*id);
                 Some(Box::new(f.clone()))
             }
+            val::Value::LoxClass(class) => {
+                Some(Box::new(class.clone()))
+            }
             _ => None,
         }
     }
 
-    fn next_id(&mut self) -> usize {
+    pub fn next_id(&mut self) -> usize {
         let res = self.counter;
         self.counter += 1;
         res
@@ -78,6 +82,15 @@ impl Interpreter {
 
     pub fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
         return match expr {
+            expr::Statement::Class {
+                name, methods
+            } => {
+                self.environment.define(name.to_string(), &val::Value::Nil);
+                let mut lox_class = class::LoxClass::default();
+                lox_class.name = name.to_string();
+                self.environment.assign(name.to_string(), &val::Value::LoxClass(lox_class)).expect("failed");
+                Ok(())
+            }
             expr::Statement::Return(_, expr) => {
                 match expr {
                     Some(expr) => {
@@ -166,6 +179,51 @@ impl Interpreter {
 
     fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
         match expr {
+            expr::Expression::Set { object, variable, value } => {
+                let obj = self.interpret_expression(object)?;
+                let val = self.interpret_expression(value)?;
+                return match obj {
+                    val::Value::LoxInstance(ref id) => {
+                        return match self.lox_instances.get_mut(&id) {
+                            None => {
+                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", id)))
+                            }
+                            Some(mut instance) => {
+                                instance.set(variable, val);
+                                Ok(val::Value::Nil)
+                            }
+                        };
+                    }
+                    _ => {
+                        Err(val::InterpreterError::SimpleError("should be call in instance".to_string()))
+                    }
+                };
+            }
+            expr::Expression::Get { object, variable } => {
+                let obj = self.interpret_expression(object)?;
+                return match obj {
+                    val::Value::LoxInstance(id) => {
+                        return match self.lox_instances.get(&id) {
+                            None => {
+                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", id)))
+                            }
+                            Some(instance) => {
+                                match instance.get(variable.as_str()) {
+                                    None => {
+                                        Err(val::InterpreterError::SimpleError(format!("miss variable: {} in {:?}", variable.as_str(), instance)))
+                                    }
+                                    Some(val) => {
+                                        Ok(val.clone())
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    _ => {
+                        Err(val::InterpreterError::SimpleError("should be call in instance".to_string()))
+                    }
+                };
+            }
             expr::Expression::Literal(l) => {
                 match l {
                     expr::Literal::String(s) => {

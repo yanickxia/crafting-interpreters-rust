@@ -22,6 +22,9 @@ impl Parser {
     }
 
     pub fn declaration(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        if self.match_token(vec![token::TokenType::Class]) {
+            return self.class();
+        }
         if self.match_token(vec![token::TokenType::Fun]) {
             return self.function("function");
         }
@@ -29,6 +32,20 @@ impl Parser {
             return self.var_declaration();
         }
         return self.statement();
+    }
+
+    pub fn class(&mut self) -> Result<expr::Statement, expr::ExpError> {
+        let name = self.consume(token::TokenType::Identifier, "Expect class name.")?.clone();
+        self.consume(token::TokenType::LeftBrace, "Expect '{' before class body.")?;
+        let mut methods = vec![];
+        while !self.check(token::TokenType::RightBrace) && !self.at_end() {
+            methods.push(self.function("method")?);
+        }
+        self.consume(token::TokenType::RightBrace, "Expect '}' before class body.")?;
+        return Ok(expr::Statement::Class {
+            name: name.lexeme,
+            methods,
+        });
     }
 
     pub fn function(&mut self, kind: &str) -> Result<expr::Statement, expr::ExpError> {
@@ -225,6 +242,15 @@ impl Parser {
                 expr::Expression::Variable(token) => {
                     Ok(expr::Expression::Assign(token, Box::new(value)))
                 }
+                expr::Expression::Get {
+                    object, variable
+                } => {
+                    Ok(expr::Expression::Set {
+                        object,
+                        variable,
+                        value: Box::new(value),
+                    })
+                }
                 _ => {
                     Err(expr::ExpError::AssignmentFailed {
                         name: equals.lexeme.to_string()
@@ -323,6 +349,12 @@ impl Parser {
         loop {
             if self.match_token(vec![token::TokenType::LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_token(vec![token::TokenType::Dot]) {
+                let variable = self.consume(token::TokenType::Identifier, "Expect property name after '.'.")?.clone();
+                expr = expr::Expression::Get {
+                    object: Box::new(expr),
+                    variable: variable.lexeme.to_string(),
+                }
             } else {
                 break;
             }
