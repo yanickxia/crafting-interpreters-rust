@@ -7,6 +7,7 @@ use crate::types::{expr, func, val};
 pub struct LoxClass {
     pub name: String,
     pub methods: Vec<val::Value>,
+    pub super_class: Option<Box<LoxClass>>,
 }
 
 impl LoxClass {
@@ -19,6 +20,13 @@ impl LoxClass {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        match &self.super_class {
+            None => {}
+            Some(sc) => {
+                return sc.find_method(name);
             }
         }
 

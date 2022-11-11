@@ -36,6 +36,13 @@ impl Parser {
 
     pub fn class(&mut self) -> Result<expr::Statement, expr::ExpError> {
         let name = self.consume(token::TokenType::Identifier, "Expect class name.")?.clone();
+
+        let mut super_class = None;
+        if self.match_token(vec![token::TokenType::Less]) {
+            self.consume(token::TokenType::Identifier, "Expect superclass name.")?;
+            super_class = Some(self.previous().clone().lexeme)
+        }
+
         self.consume(token::TokenType::LeftBrace, "Expect '{' before class body.")?;
         let mut methods = vec![];
         while !self.check(token::TokenType::RightBrace) && !self.at_end() {
@@ -45,6 +52,7 @@ impl Parser {
         return Ok(expr::Statement::Class {
             name: name.lexeme,
             methods,
+            super_class,
         });
     }
 

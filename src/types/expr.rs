@@ -175,6 +175,7 @@ pub enum Statement {
     Class {
         name: String,
         methods: Vec<Statement>,
+        super_class: Option<String>,
     },
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),

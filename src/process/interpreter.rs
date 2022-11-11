@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use crate::process::environment;
 use crate::types::{class, expr, func, val};
-use crate::types::val::Value;
 
 #[derive(Default)]
 pub struct Interpreter {
@@ -85,11 +84,27 @@ impl Interpreter {
     pub fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
         return match expr {
             expr::Statement::Class {
-                name, methods
+                name, methods, super_class
             } => {
+                let mut super_lox_class = None;
+
+                match super_class {
+                    None => {}
+                    Some(super_class) => {
+                        match self.environment.get(super_class).unwrap() {
+                            val::Value::LoxClass(clazz) => {
+                                super_lox_class = Some(Box::new(clazz.clone()))
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+
                 self.environment.define(name.to_string(), &val::Value::Nil);
                 let mut lox_class = class::LoxClass::default();
                 lox_class.name = name.to_string();
+                lox_class.super_class = super_lox_class;
                 let mut lox_class_methods = vec![];
                 // init methods
                 for method in methods {

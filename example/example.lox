@@ -1,11 +1,10 @@
-class Foo {
-  init(a,b,c) {
-    this.a = a;
-    this.b = b;
-    this.c = c;
+class Doughnut {
+  cook() {
+    print "Fry until golden brown.";
   }
 }
 
-var foo = Foo(1,2,3);
-print foo.init(3,4,5);
-print foo.a;
+class BostonCream < Doughnut {}
+
+var b = Doughnut();
+b.cook();
