@@ -1,4 +1,7 @@
-class Bagel {}
-var bagel = Bagel();
-bagel.a = 1;
-print bagel.a; // Prints "Bagel instance".
+class Bacon {
+  eat() {
+    print "Crunch crunch crunch!";
+  }
+}
+
+Bacon().eat();

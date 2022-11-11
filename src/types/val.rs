@@ -10,7 +10,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Nil,
-    LoxFunc(usize),
+    LoxFunc(String, usize),
     LoxClass(class::LoxClass),
     LoxInstance(usize),
 

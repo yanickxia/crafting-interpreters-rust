@@ -6,6 +6,7 @@ use crate::types::{expr, func, val};
 #[derive(Clone, Debug, Default)]
 pub struct LoxClass {
     pub name: String,
+    pub methods: Vec<val::Value>,
 }
 
 impl LoxClass {}
@@ -38,9 +39,33 @@ impl LoxInstance {
         };
     }
 
-    pub fn get(&self, name: &str) -> Option<&val::Value> {
-        return self.fields.get(name);
+    pub fn get(&self, name: &str) -> Option<val::Value> {
+        match self.fields.get(name) {
+            None => {
+                self.get_method(name)
+            }
+            Some(val) => {
+                Some(val.clone())
+            }
+        }
     }
+
+    fn get_method(&self, name: &str) -> Option<val::Value> {
+        let lox_class = &self.class;
+        let vec = &lox_class.methods;
+        for method in vec {
+            match method {
+                val::Value::LoxFunc(func_name, id) => {
+                    if func_name.as_str() == name {
+                        return Some(val::Value::LoxFunc(func_name.to_string(), *id));
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     pub fn set(&mut self, name: &str, val: val::Value) {
         self.fields.insert(name.to_string(), val);
     }

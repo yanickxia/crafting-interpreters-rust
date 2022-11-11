@@ -157,6 +157,7 @@ pub enum Expression {
         variable: String,
         value: Box<Expression>,
     },
+    This(String),
     Grouping(Box<Expression>),
     Variable(String),
     Assign(String, Box<Expression>),

@@ -52,7 +52,7 @@ impl Interpreter {
 
     fn cast_callable(interpreter: &mut Self, value: &val::Value) -> Option<Box<dyn func::Callable>> {
         match value {
-            val::Value::LoxFunc(id) => {
+            val::Value::LoxFunc(_, id) => {
                 let f = interpreter.get_lox_function(*id);
                 Some(Box::new(f.clone()))
             }
@@ -88,6 +88,26 @@ impl Interpreter {
                 self.environment.define(name.to_string(), &val::Value::Nil);
                 let mut lox_class = class::LoxClass::default();
                 lox_class.name = name.to_string();
+                let mut lox_class_methods = vec![];
+                // init methods
+                for method in methods {
+                    match method {
+                        expr::Statement::Function(name, params, body) => {
+                            let func_id = self.next_id();
+                            let lox_function = func::LoxFunction {
+                                id: func_id,
+                                name: name.to_string(),
+                                parameters: params.clone(),
+                                body: *body.clone(),
+                                closure: self.environment.clone(),
+                            };
+                            self.lox_functions.insert(func_id, lox_function);
+                            lox_class_methods.push(val::Value::LoxFunc(name.to_string(), func_id))
+                        }
+                        _ => panic!("not method")
+                    }
+                }
+                lox_class.methods = lox_class_methods;
                 self.environment.assign(name.to_string(), &val::Value::LoxClass(lox_class)).expect("failed");
                 Ok(())
             }
@@ -104,7 +124,7 @@ impl Interpreter {
                 let func_id = self.next_id();
 
                 // env 里面要放入这个函数，不然后面找不到
-                self.environment.define(name.to_string(), &val::Value::LoxFunc(func_id));
+                self.environment.define(name.to_string(), &val::Value::LoxFunc(name.to_string(), func_id));
 
                 let lox_function = func::LoxFunction {
                     id: func_id,
@@ -300,7 +320,7 @@ impl Interpreter {
                         }
                     }
                     expr::BinaryOperatorType::GreaterEqual => {
-                        match left.partial_cmp(&right) {
+                        return match left.partial_cmp(&right) {
                             None => {
                                 Err(val::InterpreterError::OperatorNotMatch {
                                     left,
@@ -309,9 +329,9 @@ impl Interpreter {
                                 })
                             }
                             Some(ord) => {
-                                return Ok(val::Value::Bool(ord == Ordering::Greater || left.eq(&right)));
+                                Ok(val::Value::Bool(ord == Ordering::Greater || left.eq(&right)))
                             }
-                        }
+                        };
                     }
                     expr::BinaryOperatorType::Plus => {
                         match left {
