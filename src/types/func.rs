@@ -17,6 +17,7 @@ pub struct LoxFunction {
     pub body: expr::Statement,
     pub closure: environment::Environment,
     pub bind: Option<usize>,
+    pub is_initializer: bool,
 }
 
 impl LoxFunction {
@@ -67,6 +68,10 @@ impl Callable for LoxFunction {
         interpreter.environment = new_env;
         interpreter.execute(&self.body)?;
         interpreter.environment = saved_env;
+
+        if self.is_initializer {
+            return Ok(val::Value::LoxInstance(self.bind.unwrap()));
+        }
 
         return match interpreter.ret.clone() {
             None => {

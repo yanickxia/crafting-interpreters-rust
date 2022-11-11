@@ -61,6 +61,7 @@ impl func::Callable for LoxClass {
                         let mut func = interpreter.lox_functions.get_mut(func_id).unwrap().clone();
                         func.bind = Some(i);
                         func.call(interpreter, arguments)?;
+                        func.is_initializer = true;
                     }
                     _ => {}
                 }

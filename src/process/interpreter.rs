@@ -103,6 +103,7 @@ impl Interpreter {
                                 body: *body.clone(),
                                 closure: self.environment.clone(),
                                 bind: None,
+                                is_initializer: name.as_str().eq("init"),
                             };
                             self.lox_functions.insert(func_id, lox_function);
                             lox_class_methods.push(val::Value::LoxFunc(name.to_string(), func_id))
@@ -136,6 +137,7 @@ impl Interpreter {
                     body: *body.clone(),
                     closure: self.environment.clone(),
                     bind: None,
+                    is_initializer: false,
                 };
 
                 self.lox_functions.insert(func_id, lox_function);
