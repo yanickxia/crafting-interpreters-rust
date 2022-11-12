@@ -433,6 +433,13 @@ impl Parser {
             return Ok(expr::Expression::Variable(self.previous().lexeme.to_string()));
         }
 
+        if self.match_token(vec![token::TokenType::Super]) {
+            let keyword = self.previous().lexeme.to_string();
+            self.consume(token::TokenType::Dot, "Expect '.' after 'super'.")?;
+            let method = self.consume(token::TokenType::Identifier, "Expect 'method' after 'super.'.")?.lexeme.clone();
+            return Ok(expr::Expression::Super { keyword, method });
+        }
+
         if self.match_token(vec![token::TokenType::This]) {
             return Ok(expr::Expression::This(self.previous().lexeme.to_string()));
         }

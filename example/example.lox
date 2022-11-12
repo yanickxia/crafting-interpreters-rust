@@ -4,7 +4,9 @@ class Doughnut {
   }
 }
 
-class BostonCream < Doughnut {}
-
-var b = Doughnut();
-b.cook();
+class BostonCream < Doughnut {
+  cook() {
+    super.cook();
+    print "BostonCream.";
+  }
+}

@@ -11,7 +11,7 @@ pub struct LoxClass {
 }
 
 impl LoxClass {
-    fn find_method(&self, name: String) -> Option<val::Value> {
+    pub fn find_method(&self, name: String) -> Option<val::Value> {
         for method in &self.methods {
             match method {
                 val::Value::LoxFunc(func_name, _) => {
@@ -56,9 +56,22 @@ impl func::Callable for LoxClass {
 
     fn call(&self, interpreter: &mut Interpreter, arguments: Vec<val::Value>) -> Result<val::Value, val::InterpreterError> {
         let lox_instance = LoxInstance::new(&self);
-        let i = interpreter.next_id();
-        interpreter.lox_instances.insert(i, lox_instance);
+        let id = interpreter.next_id();
+        interpreter.lox_instances.insert(id, lox_instance);
 
+
+        let mut parent_id = None;
+        if self.super_class.is_some() {
+            let parent = self.super_class.as_ref().unwrap().call(interpreter, arguments.clone())?;
+            match parent {
+                val::Value::LoxInstance {
+                    id, ..
+                } => {
+                    parent_id = Some(id)
+                }
+                _ => {}
+            }
+        }
 
         let func = self.find_method("init".to_string());
         match func {
@@ -67,7 +80,10 @@ impl func::Callable for LoxClass {
                 match func {
                     val::Value::LoxFunc(_, ref func_id) => {
                         let mut func = interpreter.lox_functions.get_mut(func_id).unwrap().clone();
-                        func.bind = Some(i);
+                        func.bind = Some(val::Value::LoxInstance {
+                            id,
+                            parent: parent_id,
+                        });
                         func.call(interpreter, arguments)?;
                         func.is_initializer = true;
                     }
@@ -77,7 +93,10 @@ impl func::Callable for LoxClass {
         }
 
 
-        return Ok(val::Value::LoxInstance(i));
+        return Ok(val::Value::LoxInstance {
+            id,
+            parent: parent_id,
+        });
     }
 }
 
@@ -109,18 +128,7 @@ impl LoxInstance {
 
     fn get_method(&self, name: &str) -> Option<val::Value> {
         let lox_class = &self.class;
-        let vec = &lox_class.methods;
-        for method in vec {
-            match method {
-                val::Value::LoxFunc(func_name, id) => {
-                    if func_name.as_str() == name {
-                        return Some(val::Value::LoxFunc(func_name.to_string(), *id));
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
+        return lox_class.find_method(name.to_string());
     }
 
     pub fn set(&mut self, name: &str, val: val::Value) {

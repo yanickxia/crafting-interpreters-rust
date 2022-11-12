@@ -16,11 +16,13 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn execute(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
+        log::debug!("execute expr: {:?}",expr);
         self.interpret_statement(expr)?;
         Ok(())
     }
 
     pub fn execute_block(&mut self, sts: &Vec<expr::Statement>) -> Result<(), val::InterpreterError> {
+        log::debug!("execute_block expr: {:?}",sts);
         // everytime execute, should be new env for block
         self.environment = environment::Environment::with_enclosing(self.environment.clone());
         for st in sts {
@@ -60,6 +62,12 @@ impl Interpreter {
             val::Value::LoxClass(class) => {
                 Some(Box::new(class.clone()))
             }
+            val::Value::LoxInstance {
+                id, ..
+            } => {
+                let instance = interpreter.lox_instances.get(id).expect("should be exist");
+                Some(Box::new(instance.class.clone()))
+            }
             _ => None,
         }
     }
@@ -82,6 +90,7 @@ impl Interpreter {
     }
 
     pub fn interpret_statement(&mut self, expr: &expr::Statement) -> Result<(), val::InterpreterError> {
+        log::debug!("interpreter statement: {:?}",expr);
         return match expr {
             expr::Statement::Class {
                 name, methods, super_class
@@ -110,6 +119,7 @@ impl Interpreter {
                 for method in methods {
                     match method {
                         expr::Statement::Function(name, params, body) => {
+                            let func_name = name.as_str();
                             let func_id = self.next_id();
                             let lox_function = func::LoxFunction {
                                 id: func_id,
@@ -164,7 +174,8 @@ impl Interpreter {
                 Ok(())
             }
             expr::Statement::Print(exp) => {
-                println!("{:?}", self.interpret_expression(exp));
+                let print_result = self.interpret_expression(exp)?;
+                println!("{:?}", print_result);
                 Ok(())
             }
             expr::Statement::Var(name, var) => {
@@ -238,15 +249,50 @@ impl Interpreter {
     }
 
     fn interpret_expression(&mut self, expr: &expr::Expression) -> Result<val::Value, val::InterpreterError> {
+        log::debug!("interpreter expr: {:?}",expr);
         match expr {
             expr::Expression::This(this) => {
-                self.lookup(this.to_string())
+                let result = self.lookup(this.to_string())?;
+                return Ok(result);
+            }
+            expr::Expression::Super {
+                keyword, method
+            } => {
+                let super_class = self.lookup(keyword.to_string())?;
+                return match super_class {
+                    val::Value::LoxInstance {
+                        id, ..
+                    } => {
+                        let instance = self.lox_instances.get(&id).expect("should be exist");
+
+                        let mut func = instance.class.find_method(method.clone()).expect("should contains function: ");
+                        match func {
+                            val::Value::LoxFunc(_, id) => {
+                                let func = self.lox_functions.get_mut(&id).expect("should exist func");
+                                func.bind = Some(super_class)
+                            }
+                            _ => {
+                                panic!("not here")
+                            }
+                        }
+
+                        return Ok(func);
+                    }
+                    other => {
+                        Err(val::InterpreterError::TypeNotMatch {
+                            expected: "LoxClass".to_string(),
+                            found: other,
+                        })
+                    }
+                };
             }
             expr::Expression::Set { object, variable, value } => {
                 let obj = self.interpret_expression(object)?;
                 let val = self.interpret_expression(value)?;
                 return match obj {
-                    val::Value::LoxInstance(ref id) => {
+                    val::Value::LoxInstance {
+                        id, ..
+                    } => {
                         return match self.lox_instances.get_mut(&id) {
                             None => {
                                 Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", id)))
@@ -264,23 +310,26 @@ impl Interpreter {
             }
             expr::Expression::Get { object, variable } => {
                 let obj = self.interpret_expression(object)?;
-                return match obj {
-                    val::Value::LoxInstance(instance_id) => {
-                        return match self.lox_instances.get(&instance_id) {
+                let variable = variable.as_str();
+                let result = match obj {
+                    val::Value::LoxInstance {
+                        id, ..
+                    } => {
+                        return match self.lox_instances.get(&id) {
                             None => {
-                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", instance_id)))
+                                Err(val::InterpreterError::SimpleError(format!("miss instance: {:?}", id)))
                             }
                             Some(instance) => {
-                                match instance.get(variable.as_str()) {
+                                match instance.get(variable) {
                                     None => {
-                                        Err(val::InterpreterError::SimpleError(format!("miss variable: {} in {:?}", variable.as_str(), instance)))
+                                        Err(val::InterpreterError::SimpleError(format!("miss variable: {} in {:?}", variable, instance)))
                                     }
                                     Some(val) => {
                                         return match val {
                                             // bind instance
                                             val::Value::LoxFunc(_, ref func_id) => {
                                                 let lox_func = self.lox_functions.get_mut(func_id).unwrap();
-                                                lox_func.bind = Some(instance_id);
+                                                lox_func.bind = Some(obj.clone());
                                                 Ok(val.clone())
                                             }
                                             _ => {
@@ -295,26 +344,27 @@ impl Interpreter {
                     _ => {
                         Err(val::InterpreterError::SimpleError("should be call in instance".to_string()))
                     }
-                };
+                }?;
+                Ok(result)
             }
             expr::Expression::Literal(l) => {
-                match l {
+                return match l {
                     expr::Literal::String(s) => {
-                        return Ok(val::Value::String(s.to_string()));
+                        Ok(val::Value::String(s.to_string()))
                     }
                     expr::Literal::Number(n) => {
-                        return Ok(val::Value::Number(*n));
+                        Ok(val::Value::Number(*n))
                     }
                     expr::Literal::Nil => {
-                        return Ok(val::Value::Nil);
+                        Ok(val::Value::Nil)
                     }
                     expr::Literal::True => {
-                        return Ok(val::Value::Bool(true));
+                        Ok(val::Value::Bool(true))
                     }
                     expr::Literal::False => {
-                        return Ok(val::Value::Bool(false));
+                        Ok(val::Value::Bool(false))
                     }
-                }
+                };
             }
             expr::Expression::Grouping(expr) => {
                 self.interpret_expression(expr)

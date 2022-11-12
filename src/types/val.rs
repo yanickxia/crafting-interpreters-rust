@@ -12,7 +12,10 @@ pub enum Value {
     Nil,
     LoxFunc(String, usize),
     LoxClass(class::LoxClass),
-    LoxInstance(usize),
+    LoxInstance {
+        id: usize,
+        parent: Option<usize>,
+    },
 
     // for fast return
     Ret(Box<Value>),

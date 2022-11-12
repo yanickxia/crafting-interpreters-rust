@@ -157,6 +157,10 @@ pub enum Expression {
         variable: String,
         value: Box<Expression>,
     },
+    Super {
+        keyword: String,
+        method: String,
+    },
     This(String),
     Grouping(Box<Expression>),
     Variable(String),

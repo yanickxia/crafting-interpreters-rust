@@ -1,6 +1,8 @@
 use crafting_interpreters::runtime::Runtime;
 
+
 fn main() {
+    env_logger::init();
     let mut runtime = Runtime::default();
     let arg_length = std::env::args().count();
     if arg_length > 2 {

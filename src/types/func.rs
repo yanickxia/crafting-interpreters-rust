@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::process::{environment, interpreter};
 use crate::types::{class, expr, val};
+use crate::types::class::LoxClass;
 
 pub trait Callable {
     fn arity(&self, interpreter: &interpreter::Interpreter) -> usize;
@@ -16,15 +17,17 @@ pub struct LoxFunction {
     pub parameters: Vec<String>,
     pub body: expr::Statement,
     pub closure: environment::Environment,
-    pub bind: Option<usize>,
+    pub bind: Option<val::Value>,
     pub is_initializer: bool,
 }
 
 impl LoxFunction {
     pub fn bind_instance(&mut self, instance: val::Value) -> Result<(), val::InterpreterError> {
         return match instance {
-            val::Value::LoxInstance(id) => {
-                self.bind = Some(id);
+            val::Value::LoxInstance {
+                ..
+            } => {
+                self.bind = Some(instance.clone());
                 Ok(())
             }
             _ => {
@@ -58,10 +61,30 @@ impl Callable for LoxFunction {
         let mut new_env = environment::Environment::with_enclosing(self.closure.clone());
         new_env.values.extend(args_env);
 
-        match self.bind {
+        match &self.bind {
             None => {}
-            Some(instance_id) => {
-                new_env.values.insert("this".to_string(), val::Value::LoxInstance(instance_id));
+            Some(bind) => {
+                match bind {
+                    val::Value::LoxInstance {
+                        id, parent
+                    } => {
+                        new_env.values.insert("this".to_string(), val::Value::LoxInstance {
+                            id: *id,
+                            parent: parent.clone(),
+                        });
+
+                        match parent {
+                            Some(p) => {
+                                new_env.values.insert("super".to_string(), val::Value::LoxInstance {
+                                    id: *p,
+                                    parent: None,
+                                });
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -70,7 +93,7 @@ impl Callable for LoxFunction {
         interpreter.environment = saved_env;
 
         if self.is_initializer {
-            return Ok(val::Value::LoxInstance(self.bind.unwrap()));
+            return Ok(self.bind.as_ref().unwrap().clone());
         }
 
         return match interpreter.ret.clone() {
