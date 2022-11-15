@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::process::{environment, interpreter};
-use crate::types::{class, expr, val};
+use crate::types::{expr, val};
 use crate::types::class::LoxClass;
 
 pub trait Callable {
