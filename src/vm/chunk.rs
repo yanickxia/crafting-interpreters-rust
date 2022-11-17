@@ -16,15 +16,6 @@ pub enum Constant {
     Number(f64)
 }
 
-impl Into<Value> for Constant {
-    fn into(self) -> Value {
-        return match self {
-            Constant::Number(val) => {
-                Value::Number(val)
-            }
-        };
-    }
-}
 
 #[derive(Clone, Default)]
 pub struct Chunk {

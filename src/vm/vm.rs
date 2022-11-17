@@ -121,6 +121,8 @@ mod tests {
         chuck.code.push((OpCode::OpConstant(j), 2));
         chuck.code.push((OpCode::OpAdd, 3));
 
-        machine.interpret(&chuck);
+        machine.current = chuck;
+        machine.step().expect("TODO: panic message");
+        assert_eq!(machine.stack.get(0).unwrap().clone(), Value::Number(36.0));
     }
 }

@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use crate::types::{class, expr};
+use crate::vm::chunk::Constant;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -20,6 +21,17 @@ pub enum Value {
     // for fast return
     Ret(Box<Value>),
 }
+
+impl From<Constant> for Value {
+    fn from(c: Constant) -> Self {
+        return match c {
+            Constant::Number(f) => {
+                Value::Number(f)
+            }
+        };
+    }
+}
+
 
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
