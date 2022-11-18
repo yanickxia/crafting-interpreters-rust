@@ -1,12 +1,1 @@
-class Doughnut {
-  cook() {
-    print "Fry until golden brown.";
-  }
-}
-
-class BostonCream < Doughnut {
-  cook() {
-    super.cook();
-    print "BostonCream.";
-  }
-}
+123 + 123

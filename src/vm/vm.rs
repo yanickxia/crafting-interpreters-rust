@@ -12,15 +12,14 @@ impl VirtualMachine {
     pub fn init() {}
     pub fn destroy() {}
 
-    pub fn interpret(&mut self, chuck: &Chunk) -> Result<(), InterpreterError> {
+    pub fn interpret(&mut self, chuck: &Chunk) -> Result<Value, InterpreterError> {
         self.current = chuck.clone();
-        return self.run();
+        self.run()?;
+        Ok(self.stack.pop().unwrap())
     }
 
     fn run(&mut self) -> Result<(), InterpreterError> {
-        loop {
-            self.step()?
-        }
+        self.step()
     }
 
     fn step(&mut self) -> Result<(), InterpreterError> {
