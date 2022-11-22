@@ -47,6 +47,41 @@ impl VirtualMachine {
                 (OpCode::OpAdd, _) | (OpCode::OpSubtract, _) | (OpCode::OpMultiply, _) | (OpCode::OpDivide, _) => {
                     self.binary_opt(opt.0.clone())
                 }
+                (OpCode::OpNil, _) => {
+                    self.push(Value::Nil)
+                }
+                (OpCode::OpTrue, _) => {
+                    self.push(Value::Bool(true))
+                }
+                (OpCode::OpFalse, _) => {
+                    self.push(Value::Bool(false))
+                }
+                (OpCode::OpNot, _) => {
+                    match self.pop_stack() {
+                        Value::Bool(b) => {
+                            self.push(Value::Bool(!b))
+                        }
+                        Value::Nil => {
+                            self.push(Value::Bool(true))
+                        }
+                        _ => panic!("not execute opt not")
+                    }
+                }
+                (OpCode::OpEqual, _) => {
+                    let a = self.pop_stack();
+                    let b = self.pop_stack();
+                    self.push(Value::Bool(a.eq(&b)));
+                }
+                (OpCode::OpGreater, _) => {
+                    let a = self.pop_stack();
+                    let b = self.pop_stack();
+                    self.push(Value::Bool(a > b));
+                }
+                (OpCode::OpLess, _) => {
+                    let a = self.pop_stack();
+                    let b = self.pop_stack();
+                    self.push(Value::Bool(a < b));
+                }
             }
         }
         Ok(())

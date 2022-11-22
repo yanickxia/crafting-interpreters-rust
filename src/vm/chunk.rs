@@ -9,11 +9,20 @@ pub enum OpCode {
     OpSubtract,
     OpMultiply,
     OpDivide,
+    OpNil,
+    OpTrue,
+    OpFalse,
+    OpNot,
+    OpEqual,
+    OpGreater,
+    OpLess,
 }
 
 #[derive(Debug, Clone)]
 pub enum Constant {
-    Number(f64)
+    Number(f64),
+    Bool(bool),
+    Nil,
 }
 
 
@@ -45,6 +54,10 @@ impl Chunk {
                 "OP_CONSTANT {:?} (idx={})",
                 self.constants[*const_idx], *const_idx
             ),
+            OpCode::OpNil => "OP_NIL".to_string(),
+            OpCode::OpTrue => "OP_TRUE".to_string(),
+            OpCode::OpFalse => "OP_FALSE".to_string(),
+            OpCode::OpNot => "OP_NOT".to_string(),
             _ => format!("Unknown opcode {:?}", opt)
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)

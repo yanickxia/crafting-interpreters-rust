@@ -28,6 +28,12 @@ impl From<Constant> for Value {
             Constant::Number(f) => {
                 Value::Number(f)
             }
+            Constant::Bool(b) => {
+                Value::Bool(b)
+            }
+            Constant::Nil => {
+                Value::Nil
+            }
         };
     }
 }

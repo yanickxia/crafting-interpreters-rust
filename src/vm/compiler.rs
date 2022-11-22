@@ -6,7 +6,6 @@ use crate::types::expr::{ExpError, Literal};
 use crate::types::token::{Token, TokenType};
 use crate::vm::chunk;
 use crate::vm::chunk::{Chunk, OpCode};
-use crate::vm::chunk::OpCode::OpNegate;
 
 #[derive(Debug, Copy, Clone)]
 enum ParseFn {
@@ -117,8 +116,8 @@ impl Compiler {
             ParseFn::Unary => self.unary(),
             ParseFn::Binary => self.binary(),
             ParseFn::Number => self.number(),
-            _ => panic!("not here")
-            // ParseFn::Literal => self.literal(can_assign),
+            ParseFn::Literal => self.literal(),
+            _ => panic!("not here"),
             // ParseFn::String => self.string(can_assign),
             // ParseFn::Variable => self.variable(can_assign),
             // ParseFn::And => self.and(can_assign),
@@ -130,6 +129,24 @@ impl Compiler {
             // ParseFn::List => self.list(can_assign),
             // ParseFn::Subscript => self.subscr(can_assign),
         }
+    }
+
+    fn literal(&mut self) -> Result<(), ExpError> {
+        match self.previous().token_type {
+            TokenType::False => {
+                self.emit_opt(OpCode::OpFalse)
+            }
+            TokenType::Nil => {
+                self.emit_opt(OpCode::OpNil)
+            }
+            TokenType::True => {
+                self.emit_opt(OpCode::OpTrue)
+            }
+            _ => {
+                panic!("not literal")
+            }
+        }
+        Ok(())
     }
 
 
@@ -172,6 +189,30 @@ impl Compiler {
         match token_type {
             TokenType::Minus => {
                 self.emit_opt(OpCode::OpNegate);
+            }
+            TokenType::Bang => {
+                self.emit_opt(OpCode::OpNot);
+            }
+            TokenType::BangEqual => {
+                self.emit_opt(OpCode::OpEqual);
+                self.emit_opt(OpCode::OpNot);
+            }
+            TokenType::EqualEqual => {
+                self.emit_opt(OpCode::OpEqual);
+            }
+            TokenType::Greater => {
+                self.emit_opt(OpCode::OpGreater);
+            }
+            TokenType::GreaterEqual => {
+                self.emit_opt(OpCode::OpLess);
+                self.emit_opt(OpCode::OpNot);
+            }
+            TokenType::Less => {
+                self.emit_opt(OpCode::OpLess);
+            }
+            TokenType::LessEqual => {
+                self.emit_opt(OpCode::OpGreater);
+                self.emit_opt(OpCode::OpNot);
             }
             _ => {
                 Err(ExpError::TokenMismatch {
