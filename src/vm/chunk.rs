@@ -16,12 +16,15 @@ pub enum OpCode {
     OpEqual,
     OpGreater,
     OpLess,
+    OpPrint,
+    OpPop,
 }
 
 #[derive(Debug, Clone)]
 pub enum Constant {
     Number(f64),
     Bool(bool),
+    String(String),
     Nil,
 }
 

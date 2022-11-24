@@ -4,8 +4,9 @@ use crate::process::parser::Parser;
 use crate::types::{expr, token, val};
 use crate::types::expr::{ExpError, Literal};
 use crate::types::token::{Token, TokenType};
+use crate::types::val::Value;
 use crate::vm::chunk;
-use crate::vm::chunk::{Chunk, OpCode};
+use crate::vm::chunk::{Chunk, Constant, OpCode};
 
 #[derive(Debug, Copy, Clone)]
 enum ParseFn {
@@ -67,7 +68,7 @@ struct ParseRule {
 }
 
 pub struct Compiler {
-    tokens: Vec<token::Token>,
+    tokens: Vec<Token>,
     current: usize,
     compiling: Chunk,
 }
@@ -79,10 +80,92 @@ impl Compiler {
 
     pub fn compile(&mut self) -> Result<Chunk, ExpError> {
         while !self.at_end() {
-            self.expression()?;
+            self.declaration()?;
         }
 
         Ok(self.compiling.clone())
+    }
+
+    fn declaration(&mut self) -> Result<(), ExpError> {
+        if self._match(TokenType::Var) {
+            self.var_declaration()?;
+        } else {
+            self.statement()?;
+        }
+
+        Ok(())
+    }
+
+    fn var_declaration(&mut self) -> Result<(), ExpError> {
+        let value = self.parse_variable("Expect variable name.");
+    }
+
+    fn parse_variable(&mut self, err_msg: &str) -> Result<Value, ExpError> {
+        self.consume(TokenType::Identifier, err_msg)?;
+        let previous = self.previous().clone();
+    }
+
+    fn statement(&mut self) -> Result<(), ExpError> {
+        if self._match(TokenType::Print) {
+            self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+            self.emit_opt(OpCode::OpPrint)
+        } else {
+            self.expression_statement()?;
+        }
+        Ok(())
+    }
+
+    fn expression_statement(&mut self) -> Result<(), ExpError> {
+        self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+        self.emit_opt(OpCode::OpPop);
+
+        Ok(())
+    }
+
+
+    fn apply_parse_fn(&mut self, parse_fn: ParseFn) -> Result<(), ExpError> {
+        match parse_fn {
+            ParseFn::Grouping => self.grouping(),
+            ParseFn::Unary => self.unary(),
+            ParseFn::Binary => self.binary(),
+            ParseFn::Number => self.number(),
+            ParseFn::Literal => self.literal(),
+            ParseFn::String => self.string(),
+            _ => panic!("not here"),
+            // ParseFn::Variable => self.variable(can_assign),
+            // ParseFn::And => self.and(can_assign),
+            // ParseFn::Or => self.or(can_assign),
+            // ParseFn::Call => self.call(can_assign),
+            // ParseFn::Dot => self.dot(can_assign),
+            // ParseFn::This => self.this(can_assign),
+            // ParseFn::Super => self.super_(can_assign),
+            // ParseFn::List => self.list(can_assign),
+            // ParseFn::Subscript => self.subscr(can_assign),
+        }
+    }
+
+    fn string(&mut self) -> Result<(), ExpError> {
+        let prev = self.previous().clone();
+        match prev.token_type {
+            TokenType::String => {
+                match prev.literal {
+                    None => panic!("not here"),
+                    Some(s) => {
+                        match s {
+                            token::Literal::Str(s) => {
+                                let index = self.compiling.add_constant(Constant::String(s));
+                                self.emit_opt(OpCode::OpConstant(index))
+                            }
+                            _ => panic!("not here")
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ExpError> {
@@ -109,27 +192,6 @@ impl Compiler {
         Ok(())
     }
 
-
-    fn apply_parse_fn(&mut self, parse_fn: ParseFn) -> Result<(), ExpError> {
-        match parse_fn {
-            ParseFn::Grouping => self.grouping(),
-            ParseFn::Unary => self.unary(),
-            ParseFn::Binary => self.binary(),
-            ParseFn::Number => self.number(),
-            ParseFn::Literal => self.literal(),
-            _ => panic!("not here"),
-            // ParseFn::String => self.string(can_assign),
-            // ParseFn::Variable => self.variable(can_assign),
-            // ParseFn::And => self.and(can_assign),
-            // ParseFn::Or => self.or(can_assign),
-            // ParseFn::Call => self.call(can_assign),
-            // ParseFn::Dot => self.dot(can_assign),
-            // ParseFn::This => self.this(can_assign),
-            // ParseFn::Super => self.super_(can_assign),
-            // ParseFn::List => self.list(can_assign),
-            // ParseFn::Subscript => self.subscr(can_assign),
-        }
-    }
 
     fn literal(&mut self) -> Result<(), ExpError> {
         match self.previous().token_type {
@@ -165,25 +227,27 @@ impl Compiler {
         self.parse_precedence(rule.precedence.next())?;
 
         match token_type {
-            TokenType::Minus => {
-                self.emit_opt(OpCode::OpSubtract)
-            }
-            TokenType::Plus => {
-                self.emit_opt(OpCode::OpAdd)
-            }
             TokenType::Slash => {
                 self.emit_opt(OpCode::OpDivide)
             }
             TokenType::Star => {
                 self.emit_opt(OpCode::OpMultiply)
             }
-            _ => panic!("not binary opt")
+            TokenType::Minus => {
+                self.emit_opt(OpCode::OpSubtract)
+            }
+            TokenType::Plus => {
+                self.emit_opt(OpCode::OpAdd)
+            }
+            _ => {
+                // panic!("not binary opt")
+            }
         }
         Ok(())
     }
 
     fn unary(&mut self) -> Result<(), ExpError> {
-        self.parse_precedence(Precedence::Unary)?;
+        // self.parse_precedence(Precedence::Unary)?;
         let token_type = self.previous().token_type;
         self.expression()?;
         match token_type {
@@ -215,11 +279,11 @@ impl Compiler {
                 self.emit_opt(OpCode::OpNot);
             }
             _ => {
-                Err(ExpError::TokenMismatch {
-                    expected: token_type.clone(),
-                    found: self.previous().clone(),
-                    err_string: None,
-                })?;
+                // Err(ExpError::TokenMismatch {
+                //     expected: token_type.clone(),
+                //     found: self.previous().clone(),
+                //     err_string: None,
+                // })?;
             }
         }
         Ok(())
@@ -246,6 +310,14 @@ impl Compiler {
             found: self.previous().clone(),
             err_string: Some(message.to_string()),
         });
+    }
+
+    fn _match(&mut self, token_type: TokenType) -> bool {
+        if !self.check(token_type) {
+            return false;
+        }
+        self.advance();
+        true
     }
 
     fn check(&mut self, token_type: TokenType) -> bool {

@@ -39,8 +39,16 @@ impl VMRuntime {
         match compiler.compile() {
             Ok(chuck) => {
                 match self.vm.interpret(&chuck) {
-                    Ok(v) => {
-                        print!("{:?}", v);
+                    Ok(_) => {
+                        let mut i = self.vm.stack.len();
+                        loop {
+                            let v = self.vm.stack.pop();
+                            if v.is_none() {
+                                break;
+                            }
+                            i -= 1;
+                            println!("stack #{}: value {:?}", i, v)
+                        }
                     }
                     Err(e) => {
                         self.report(Box::new(e))

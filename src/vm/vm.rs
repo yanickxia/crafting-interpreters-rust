@@ -12,10 +12,9 @@ impl VirtualMachine {
     pub fn init() {}
     pub fn destroy() {}
 
-    pub fn interpret(&mut self, chuck: &Chunk) -> Result<Value, InterpreterError> {
+    pub fn interpret(&mut self, chuck: &Chunk) -> Result<(), InterpreterError> {
         self.current = chuck.clone();
-        self.run()?;
-        Ok(self.stack.pop().unwrap())
+        self.run()
     }
 
     fn run(&mut self) -> Result<(), InterpreterError> {
@@ -82,6 +81,12 @@ impl VirtualMachine {
                     let b = self.pop_stack();
                     self.push(Value::Bool(a < b));
                 }
+                (OpCode::OpPrint, _) => {
+                    println!("{:?}", self.pop_stack());
+                }
+                (OpCode::OpPop, _) => {
+                    self.pop_stack();
+                }
             }
         }
         Ok(())
@@ -98,41 +103,27 @@ impl VirtualMachine {
     }
 
     fn binary_opt(&mut self, opt: OpCode) {
-        let x = match self.pop_stack() {
-            Value::Number(val) => {
-                val
-            }
-            _ => {
-                panic!("can't add")
-            }
-        };
+        let x = self.pop_stack();
+        let y = self.pop_stack();
 
-        let y = match self.pop_stack() {
-            Value::Number(val) => {
-                val
+        let new_value = match x {
+            Value::Number(x) => {
+                match y {
+                    Value::Number(y) => {
+                        Value::Number(x + y)
+                    }
+                    _ => panic!("type not equal")
+                }
             }
-            _ => {
-                panic!("can't add")
+            Value::String(x) => {
+                match y {
+                    Value::String(y) => {
+                        Value::String(y + x.as_str())
+                    }
+                    _ => panic!("type not equal")
+                }
             }
-        };
-
-
-        let new_value = match opt {
-            OpCode::OpAdd => {
-                Value::Number(x + y)
-            }
-            OpCode::OpSubtract => {
-                Value::Number(x - y)
-            }
-            OpCode::OpMultiply => {
-                Value::Number(x * y)
-            }
-            OpCode::OpDivide => {
-                Value::Number(x / y)
-            }
-            _ => {
-                panic!("not binary opt")
-            }
+            _ => panic!("not support binary opt")
         };
 
         self.push(new_value)

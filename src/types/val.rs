@@ -34,6 +34,9 @@ impl From<Constant> for Value {
             Constant::Nil => {
                 Value::Nil
             }
+            Constant::String(s) => {
+                Value::String(s)
+            }
         };
     }
 }
