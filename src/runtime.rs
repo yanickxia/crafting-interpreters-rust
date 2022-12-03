@@ -12,6 +12,7 @@ use crate::vm::chunk::Constant;
 pub struct VMRuntime {
     had_error: bool,
     vm: vm::VirtualMachine,
+    pub disassemble: bool,
 }
 
 
@@ -20,6 +21,7 @@ impl Default for VMRuntime {
         return VMRuntime {
             had_error: false,
             vm: vm::VirtualMachine::default(),
+            disassemble: false,
         };
     }
 }
@@ -38,6 +40,10 @@ impl VMRuntime {
         let mut compiler = compiler::Compiler::new(tokens.unwrap());
         match compiler.compile() {
             Ok(chuck) => {
+                if self.disassemble {
+                    chuck.disassemble("default");
+                    return;
+                }
                 match self.vm.interpret(&chuck) {
                     Ok(_) => {
                         let mut i = self.vm.stack.len();

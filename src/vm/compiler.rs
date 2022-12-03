@@ -8,7 +8,6 @@ use crate::types::token::{Token, TokenType};
 use crate::types::val::Value;
 use crate::vm::chunk;
 use crate::vm::chunk::{Chunk, Constant, OpCode};
-use crate::vm::chunk::OpCode::OpPop;
 
 type ConstantIndex = usize;
 type LocalIndex = usize;
@@ -144,6 +143,25 @@ impl Compiler {
         Ok(())
     }
 
+    fn and(&mut self, _: bool) -> Result<(), ExpError> {
+        let end_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        self.emit_opt(OpCode::OpPop);
+        self.parse_precedence(Precedence::And)?;
+        self.patch_jump(end_jump);
+        Ok(())
+    }
+
+    fn or(&mut self, _: bool) -> Result<(), ExpError> {
+        let else_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        let end_jump = self.emit_jump(OpCode::Jump(0));
+
+        self.patch_jump(else_jump);
+        self.emit_opt(OpCode::OpPop);
+        self.parse_precedence(Precedence::Or)?;
+        self.patch_jump(end_jump);
+        Ok(())
+    }
+
     fn parse_variable(&mut self, err_msg: &str) -> Result<ConstantIndex, ExpError> {
         self.consume(TokenType::Identifier, err_msg)?;
 
@@ -191,6 +209,12 @@ impl Compiler {
             self.expression()?;
             self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
             self.emit_opt(OpCode::OpPrint)
+        } else if self._match(TokenType::For) {
+            self.for_statement()?;
+        } else if self._match(TokenType::If) {
+            self.if_statement()?;
+        } else if self._match(TokenType::While) {
+            self.while_statement()?;
         } else if self._match(TokenType::LeftBrace) {
             self.begin_scope()?;
             self.block()?;
@@ -199,6 +223,108 @@ impl Compiler {
             self.expression_statement()?;
         }
         Ok(())
+    }
+
+    fn for_statement(&mut self) -> Result<(), ExpError> {
+        self.begin_scope()?;
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+        if self._match(TokenType::Semicolon) {} else if self._match(TokenType::Var) {
+            self.var_declaration()?;
+        } else {
+            self.expression_statement()?;
+        }
+
+        let mut loop_start = self.compiling.code.len();
+        let mut exit_jump = None;
+        if !self._match(TokenType::Semicolon) {
+            self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+            exit_jump = Some(self.emit_jump(OpCode::JumpIfFalse(0)));
+            self.emit_opt(OpCode::OpPop);
+        }
+        
+        if !self._match(TokenType::RightParen) {
+            let body_jump = self.emit_jump(OpCode::Jump(0));
+            let increment_start = self.compiling.code.len();
+            self.expression()?;
+            self.emit_opt(OpCode::OpPop);
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+            self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+
+        self.statement()?;
+        self.emit_loop(loop_start);
+
+        match exit_jump {
+            None => {}
+            Some(index) => {
+                self.patch_jump(index);
+                self.emit_opt(OpCode::OpPop);
+            }
+        }
+        self.end_scope()?;
+        Ok(())
+    }
+
+    fn while_statement(&mut self) -> Result<(), ExpError> {
+        let loop_start = self.compiling.code.len();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        self.emit_opt(OpCode::OpPop);
+        self.statement()?;
+
+        self.emit_loop(loop_start);
+        self.patch_jump(exit_jump);
+        self.emit_opt(OpCode::OpPop);
+        Ok(())
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) {
+        self.emit_opt(OpCode::Loop(self.compiling.code.len() - loop_start + 1))
+    }
+
+    fn if_statement(&mut self) -> Result<(), ExpError> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
+
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        self.emit_opt(OpCode::OpPop);
+        self.statement()?;
+        let else_jump = self.emit_jump(OpCode::Jump(0));
+        self.patch_jump(then_jump);
+        self.emit_opt(OpCode::OpPop);
+        if self._match(TokenType::Else) {
+            self.statement()?;
+        }
+        self.patch_jump(else_jump);
+
+        Ok(())
+    }
+
+    fn emit_jump(&mut self, opt: OpCode) -> usize {
+        self.emit_opt(opt);
+        self.compiling.code.len() - 1
+    }
+
+    fn patch_jump(&mut self, jump_location: usize) {
+        let true_jump = self.compiling.code.len() - jump_location - 1;
+        let (jump, line) = &self.compiling.code[jump_location];
+        match jump {
+            OpCode::JumpIfFalse(_) => {
+                self.compiling.code[jump_location] = (OpCode::JumpIfFalse(true_jump), *line)
+            }
+            OpCode::Jump(_) => {
+                self.compiling.code[jump_location] = (OpCode::Jump(true_jump), *line)
+            }
+            _ => panic!("not here")
+        }
     }
 
     fn block(&mut self) -> Result<(), ExpError> {
@@ -212,7 +338,7 @@ impl Compiler {
     fn expression_statement(&mut self) -> Result<(), ExpError> {
         self.expression()?;
         self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
-        self.emit_opt(OpPop);
+        self.emit_opt(OpCode::OpPop);
 
         Ok(())
     }
@@ -225,7 +351,7 @@ impl Compiler {
     fn end_scope(&mut self) -> Result<(), ExpError> {
         self.scope_depth -= 1;
         while self.locals.len() > 0 && self.locals.last().expect("exist").depth > self.scope_depth as i32 {
-            self.emit_opt(OpPop);
+            self.emit_opt(OpCode::OpPop);
             self.locals.pop();
         }
         Ok(())
@@ -240,9 +366,9 @@ impl Compiler {
             ParseFn::Literal => self.literal(),
             ParseFn::String => self.string(),
             ParseFn::Variable => self.variable(can_assign),
+            ParseFn::And => self.and(can_assign),
+            ParseFn::Or => self.or(can_assign),
             _ => panic!("not here"),
-            // ParseFn::And => self.and(can_assign),
-            // ParseFn::Or => self.or(can_assign),
             // ParseFn::Call => self.call(can_assign),
             // ParseFn::Dot => self.dot(can_assign),
             // ParseFn::This => self.this(can_assign),
@@ -285,7 +411,7 @@ impl Compiler {
                 let index = self.compiling.add_constant(Constant::String(name.clone()));
                 if can_assign && self._match(TokenType::Equal) {
                     self.expression()?;
-                    self.emit_opt(OpCode::OpGetGlobal(index));
+                    self.emit_opt(OpCode::OpSetGlobal(index));
                 } else {
                     self.emit_opt(OpCode::OpGetGlobal(index));
                 }
@@ -392,8 +518,29 @@ impl Compiler {
             TokenType::Plus => {
                 self.emit_opt(OpCode::OpAdd)
             }
+            TokenType::BangEqual => {
+                self.emit_opt(OpCode::OpEqual);
+                self.emit_opt(OpCode::OpNot);
+            }
+            TokenType::EqualEqual => {
+                self.emit_opt(OpCode::OpEqual);
+            }
+            TokenType::Greater => {
+                self.emit_opt(OpCode::OpGreater);
+            }
+            TokenType::GreaterEqual => {
+                self.emit_opt(OpCode::OpLess);
+                self.emit_opt(OpCode::OpNot);
+            }
+            TokenType::Less => {
+                self.emit_opt(OpCode::OpLess);
+            }
+            TokenType::LessEqual => {
+                self.emit_opt(OpCode::OpGreater);
+                self.emit_opt(OpCode::OpNot);
+            }
             _ => {
-                // panic!("not binary opt")
+                panic!("not binary opt")
             }
         }
         Ok(())

@@ -9,3 +9,4 @@ edition = "2021"
 phf = { version = "0.11", features = ["macros"] }
 log = "0.4"
 env_logger = "0.9.0"
+clap = { version = "4.0.29", features = ["derive"] }

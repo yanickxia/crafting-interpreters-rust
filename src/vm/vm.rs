@@ -9,6 +9,7 @@ pub struct VirtualMachine {
     pub current: Chunk,
     pub stack: Vec<Value>,
     pub globals: HashMap<String, Value>,
+    ip: usize,
 }
 
 impl VirtualMachine {
@@ -25,8 +26,8 @@ impl VirtualMachine {
     }
 
     fn step(&mut self) -> Result<(), InterpreterError> {
-        for i in 0..self.current.code.len() {
-            let opt = self.current.code.get(i).expect("never here").clone();
+        while self.ip != self.current.code.len() {
+            let opt = self.current.code.get(self.ip).expect("never here").clone();
             match opt {
                 (OpCode::OpReturn, _) => {
                     println!("{:?}", self.pop_stack());
@@ -77,12 +78,12 @@ impl VirtualMachine {
                 (OpCode::OpGreater, _) => {
                     let a = self.pop_stack();
                     let b = self.pop_stack();
-                    self.push(Value::Bool(a > b));
+                    self.push(Value::Bool(b > a));
                 }
                 (OpCode::OpLess, _) => {
                     let a = self.pop_stack();
                     let b = self.pop_stack();
-                    self.push(Value::Bool(a < b));
+                    self.push(Value::Bool(b < a));
                 }
                 (OpCode::OpPrint, _) => {
                     println!("{:?}", self.pop_stack());
@@ -113,8 +114,22 @@ impl VirtualMachine {
                     let val = self.stack.last().expect("expect last").clone();
                     self.stack[index] = val;
                 }
+                (OpCode::JumpIfFalse(jump_location), _) => {
+                    let condition = cast!(self.stack.last().expect("expect last").clone(), Value::Bool);
+                    if !condition {
+                        self.ip += jump_location;
+                    }
+                }
+                (OpCode::Jump(jump_location), _) => {
+                    self.ip += jump_location;
+                }
+                (OpCode::Loop(offset), _) => {
+                    self.ip -= offset
+                }
             }
+            self.ip += 1
         }
+
         Ok(())
     }
 
@@ -136,7 +151,21 @@ impl VirtualMachine {
             Value::Number(x) => {
                 match y {
                     Value::Number(y) => {
-                        Value::Number(x + y)
+                        match opt {
+                            OpCode::OpAdd => {
+                                Value::Number(x + y)
+                            }
+                            OpCode::OpSubtract => {
+                                Value::Number(y - x)
+                            }
+                            OpCode::OpMultiply => {
+                                Value::Number(y * x)
+                            }
+                            OpCode::OpDivide => {
+                                Value::Number(y / x)
+                            }
+                            _ => panic!("type not equal")
+                        }
                     }
                     _ => panic!("type not equal")
                 }

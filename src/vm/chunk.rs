@@ -23,6 +23,10 @@ pub enum OpCode {
     OpSetGlobal(usize),
     OpGetLocal(usize),
     OpSetLocal(usize),
+    JumpIfFalse(usize),
+    Jump(usize),
+    Loop(usize),
+
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +75,24 @@ impl Chunk {
             OpCode::OpTrue => "OP_TRUE".to_string(),
             OpCode::OpFalse => "OP_FALSE".to_string(),
             OpCode::OpNot => "OP_NOT".to_string(),
-            _ => format!("Unknown opcode {:?}", opt)
+            OpCode::OpNegate => "OP_NEGATE".to_string(),
+            OpCode::OpAdd => "OP_ADD".to_string(),
+            OpCode::OpSubtract => "OP_SUB".to_string(),
+            OpCode::OpMultiply => "OP_MUL".to_string(),
+            OpCode::OpDivide => "OP_DIV".to_string(),
+            OpCode::OpEqual => "OP_EQUAL".to_string(),
+            OpCode::OpGreater => "OP_GREATER".to_string(),
+            OpCode::OpLess => "OP_LESS".to_string(),
+            OpCode::OpPrint => "OP_PRINT".to_string(),
+            OpCode::OpPop => "OP_POP".to_string(),
+            OpCode::OpDefineGlobal(index) => format!("OP_DEF_GLOBAL: {}", index),
+            OpCode::OpGetGlobal(index) => format!("OP_GET_GLOBAL: {:?}", self.constants[*index]),
+            OpCode::OpSetGlobal(index) => format!("OP_SET_GLOBAL: {:?}", self.constants[*index]),
+            OpCode::OpGetLocal(index) => format!("OP_GET_LOCAL: {}", index),
+            OpCode::OpSetLocal(index) => format!("OP_SET_LOCAL: {}", index),
+            OpCode::JumpIfFalse(offset) => format!("JUMP_IF_FALSE: {}", offset),
+            OpCode::Jump(offset) => format!("JUMP: {}", offset),
+            OpCode::Loop(offset) => format!("LOOP: {}", offset),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }
