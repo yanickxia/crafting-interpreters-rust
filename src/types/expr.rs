@@ -8,6 +8,8 @@ use crate::types::token;
 
 #[derive(Debug)]
 pub enum ExpError {
+    Common(String),
+    VariableRepeatDef(String),
     UnexpectedToken(token::Token),
     TokenMismatch {
         expected: token::TokenType,
@@ -64,7 +66,10 @@ impl Display for ExpError {
                 "ExpectedExpression line={},token_type={:?}",
                 line, token_type
             ),
-            ExpError::AssignmentFailed { name } => write!(f, "{}, Invalid assignment target.", name)
+            ExpError::AssignmentFailed { name } => write!(f, "{}, Invalid assignment target.", name),
+
+            ExpError::VariableRepeatDef(name) => write!(f, "{}, Variable repeat def.", name),
+            ExpError::Common(str) => write!(f, "{}", str),
         }
     }
 }

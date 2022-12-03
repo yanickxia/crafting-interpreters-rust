@@ -18,6 +18,11 @@ pub enum OpCode {
     OpLess,
     OpPrint,
     OpPop,
+    OpDefineGlobal(usize),
+    OpGetGlobal(usize),
+    OpSetGlobal(usize),
+    OpGetLocal(usize),
+    OpSetLocal(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +41,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    pub fn get_constant(&self, index: usize) -> Constant {
+        let constant = self.constants[index].clone();
+        return constant;
+    }
+
     pub fn add_constant(&mut self, val: Constant) -> usize {
         let constants_index = self.constants.len();
         self.constants.push(val);

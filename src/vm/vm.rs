@@ -1,11 +1,14 @@
-use crate::types;
+use std::collections::HashMap;
+
+use crate::{cast, types};
 use crate::types::val::{InterpreterError, Value};
-use crate::vm::chunk::{Chunk, OpCode};
+use crate::vm::chunk::{Chunk, Constant, OpCode};
 
 #[derive(Default)]
 pub struct VirtualMachine {
     pub current: Chunk,
     pub stack: Vec<Value>,
+    pub globals: HashMap<String, Value>,
 }
 
 impl VirtualMachine {
@@ -23,7 +26,7 @@ impl VirtualMachine {
 
     fn step(&mut self) -> Result<(), InterpreterError> {
         for i in 0..self.current.code.len() {
-            let opt = self.current.code.get(i).expect("xxx");
+            let opt = self.current.code.get(i).expect("never here").clone();
             match opt {
                 (OpCode::OpReturn, _) => {
                     println!("{:?}", self.pop_stack());
@@ -40,7 +43,7 @@ impl VirtualMachine {
                     self.push(new_value);
                 }
                 (OpCode::OpConstant(index), _) => {
-                    let val: Value = self.current.constants.get(*index).expect("should be exit").clone().into();
+                    let val: Value = self.current.constants.get(index).expect("should be exit").clone().into();
                     self.push(val);
                 }
                 (OpCode::OpAdd, _) | (OpCode::OpSubtract, _) | (OpCode::OpMultiply, _) | (OpCode::OpDivide, _) => {
@@ -86,6 +89,29 @@ impl VirtualMachine {
                 }
                 (OpCode::OpPop, _) => {
                     self.pop_stack();
+                }
+                (OpCode::OpDefineGlobal(index), _) => {
+                    let value = self.pop_stack();
+                    let key = cast!(self.current.get_constant(index), Constant::String);
+
+                    self.globals.insert(key, value);
+                }
+                (OpCode::OpGetGlobal(index), _) => {
+                    let key = cast!(self.current.get_constant(index), Constant::String);
+                    let val = self.globals.get(key.as_str()).expect("not found in globals").clone();
+                    self.push(val);
+                }
+                (OpCode::OpSetGlobal(index), _) => {
+                    let key = cast!(self.current.get_constant(index), Constant::String);
+                    let val = self.stack.last().expect("expect last").clone();
+                    self.globals.insert(key, val);
+                }
+                (OpCode::OpGetLocal(index), _) => {
+                    self.push(self.stack[index].clone())
+                }
+                (OpCode::OpSetLocal(index), _) => {
+                    let val = self.stack.last().expect("expect last").clone();
+                    self.stack[index] = val;
                 }
             }
         }

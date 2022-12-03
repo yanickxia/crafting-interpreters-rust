@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use crate::cast;
 use crate::process::parser::Parser;
 use crate::types::{expr, token, val};
 use crate::types::expr::{ExpError, Literal};
@@ -7,6 +8,10 @@ use crate::types::token::{Token, TokenType};
 use crate::types::val::Value;
 use crate::vm::chunk;
 use crate::vm::chunk::{Chunk, Constant, OpCode};
+use crate::vm::chunk::OpCode::OpPop;
+
+type ConstantIndex = usize;
+type LocalIndex = usize;
 
 #[derive(Debug, Copy, Clone)]
 enum ParseFn {
@@ -67,15 +72,26 @@ struct ParseRule {
     precedence: Precedence,
 }
 
+#[derive(Clone)]
+pub struct Local {
+    name: String,
+    depth: i32,
+}
+
+#[derive(Default)]
 pub struct Compiler {
     tokens: Vec<Token>,
     current: usize,
     compiling: Chunk,
+    scope_depth: usize,
+    locals: Vec<Local>,
 }
 
 impl Compiler {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, current: 0, compiling: Chunk::default() }
+        let mut compiler = Self::default();
+        compiler.tokens = tokens;
+        return compiler;
     }
 
     pub fn compile(&mut self) -> Result<Chunk, ExpError> {
@@ -97,12 +113,77 @@ impl Compiler {
     }
 
     fn var_declaration(&mut self) -> Result<(), ExpError> {
-        let value = self.parse_variable("Expect variable name.");
+        let global = self.parse_variable("Expect variable name.")?;
+        if self._match(TokenType::Equal) {
+            self.expression()?;
+        } else {
+            self.emit_opt(OpCode::OpNil)
+        }
+
+        self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
+        self.define_variable(global)?;
+
+        Ok(())
     }
 
-    fn parse_variable(&mut self, err_msg: &str) -> Result<Value, ExpError> {
+    fn mark_initialized(&mut self) -> Result<(), ExpError> {
+        let mut last = (*self.locals.last().expect("should exist")).clone();
+        last.depth = self.scope_depth as i32;
+        let last_index = self.locals.len() - 1;
+        self.locals[last_index] = last;
+        Ok(())
+    }
+
+    fn define_variable(&mut self, val: ConstantIndex) -> Result<(), ExpError> {
+        if self.scope_depth > 0 {
+            self.mark_initialized()?;
+            return Ok(());
+        }
+
+        self.emit_opt(OpCode::OpDefineGlobal(val));
+        Ok(())
+    }
+
+    fn parse_variable(&mut self, err_msg: &str) -> Result<ConstantIndex, ExpError> {
         self.consume(TokenType::Identifier, err_msg)?;
+
+        self.declare_variable()?;
+        if self.scope_depth > 0 {
+            return Ok(0);
+        }
+
+
         let previous = self.previous().clone();
+        let i = self.compiling.add_constant(Constant::String(previous.lexeme));
+        return Ok(i);
+    }
+
+    fn declare_variable(&mut self) -> Result<(), ExpError> {
+        if self.scope_depth == 0 {
+            return Ok(());
+        }
+
+        let name = self.previous().lexeme.clone();
+        for l in &self.locals {
+            if l.depth != -1 && l.depth < self.scope_depth as i32 {
+                break;
+            }
+            if l.name.eq(name.as_str()) {
+                return Err(ExpError::VariableRepeatDef(name.clone()));
+            }
+        }
+
+        self.add_local(name)?;
+
+        Ok(())
+    }
+
+    fn add_local(&mut self, name: String) -> Result<(), ExpError> {
+        self.locals.push(Local {
+            name,
+            depth: -1,
+        });
+        Ok(())
     }
 
     fn statement(&mut self) -> Result<(), ExpError> {
@@ -110,22 +191,47 @@ impl Compiler {
             self.expression()?;
             self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
             self.emit_opt(OpCode::OpPrint)
+        } else if self._match(TokenType::LeftBrace) {
+            self.begin_scope()?;
+            self.block()?;
+            self.end_scope()?;
         } else {
             self.expression_statement()?;
         }
         Ok(())
     }
 
+    fn block(&mut self) -> Result<(), ExpError> {
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::Eof) {
+            self.declaration()?;
+        }
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")?;
+        Ok(())
+    }
+
     fn expression_statement(&mut self) -> Result<(), ExpError> {
         self.expression()?;
         self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
-        self.emit_opt(OpCode::OpPop);
+        self.emit_opt(OpPop);
 
         Ok(())
     }
 
+    fn begin_scope(&mut self) -> Result<(), ExpError> {
+        self.scope_depth += 1;
+        Ok(())
+    }
 
-    fn apply_parse_fn(&mut self, parse_fn: ParseFn) -> Result<(), ExpError> {
+    fn end_scope(&mut self) -> Result<(), ExpError> {
+        self.scope_depth -= 1;
+        while self.locals.len() > 0 && self.locals.last().expect("exist").depth > self.scope_depth as i32 {
+            self.emit_opt(OpPop);
+            self.locals.pop();
+        }
+        Ok(())
+    }
+
+    fn apply_parse_fn(&mut self, parse_fn: ParseFn, can_assign: bool) -> Result<(), ExpError> {
         match parse_fn {
             ParseFn::Grouping => self.grouping(),
             ParseFn::Unary => self.unary(),
@@ -133,8 +239,8 @@ impl Compiler {
             ParseFn::Number => self.number(),
             ParseFn::Literal => self.literal(),
             ParseFn::String => self.string(),
+            ParseFn::Variable => self.variable(can_assign),
             _ => panic!("not here"),
-            // ParseFn::Variable => self.variable(can_assign),
             // ParseFn::And => self.and(can_assign),
             // ParseFn::Or => self.or(can_assign),
             // ParseFn::Call => self.call(can_assign),
@@ -168,8 +274,51 @@ impl Compiler {
         Ok(())
     }
 
+    fn variable(&mut self, can_assign: bool) -> Result<(), ExpError> {
+        let name = self.previous().lexeme.clone();
+        self.named_variable(name, can_assign)
+    }
+
+    fn named_variable(&mut self, name: String, can_assign: bool) -> Result<(), ExpError> {
+        match self.resolve_local(name.clone())? {
+            None => {
+                let index = self.compiling.add_constant(Constant::String(name.clone()));
+                if can_assign && self._match(TokenType::Equal) {
+                    self.expression()?;
+                    self.emit_opt(OpCode::OpGetGlobal(index));
+                } else {
+                    self.emit_opt(OpCode::OpGetGlobal(index));
+                }
+            }
+            Some(index) => {
+                if can_assign && self._match(TokenType::Equal) {
+                    self.expression()?;
+                    self.emit_opt(OpCode::OpSetLocal(index));
+                } else {
+                    self.emit_opt(OpCode::OpGetLocal(index));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn resolve_local(&mut self, name: String) -> Result<Option<LocalIndex>, ExpError> {
+        for i in (0..self.locals.len()).rev() {
+            let local = &self.locals[i];
+            if local.name.eq(name.as_str()) {
+                if local.depth == -1 {
+                    return Err(ExpError::Common("Can't read local variable in its own initializer.".to_string()));
+                }
+                return Ok(Some(i));
+            }
+        }
+        return Ok(None);
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), ExpError> {
         let token = self.advance();
+        let can_assign = precedence <= Precedence::Assignment;
         let rule = Self::get_rule(token.token_type);
 
         match rule.prefix {
@@ -177,16 +326,20 @@ impl Compiler {
                 return Err(ExpError::UnexpectedToken(token.clone()));
             }
             Some(parse_fn) => {
-                self.apply_parse_fn(parse_fn)?;
+                self.apply_parse_fn(parse_fn, can_assign)?;
             }
         }
 
         while precedence <= Compiler::get_rule(self.peek().token_type).precedence {
             self.advance();
             match Self::get_rule(self.previous().token_type).infix {
-                Some(parse_fn) => self.apply_parse_fn(parse_fn)?,
+                Some(parse_fn) => self.apply_parse_fn(parse_fn, can_assign)?,
                 None => panic!("could not find infix rule to apply tok = {:?}", self.peek()),
             }
+        }
+
+        if can_assign && self._match(TokenType::Equal) {
+            panic!("Invalid assignment target")
         }
 
         Ok(())
@@ -332,7 +485,7 @@ impl Compiler {
     }
 
 
-    fn emit_constant(&mut self, val: chunk::Constant) {
+    fn emit_constant(&mut self, val: Constant) {
         let index = self.compiling.add_constant(val);
         self.compiling.code.push((OpCode::OpConstant(index), self.current))
     }
