@@ -109,6 +109,10 @@ impl Compiler {
         return self.current;
     }
 
+    pub fn current_function_mut(&mut self) -> &mut Function {
+        return &mut self.function;
+    }
+
     pub fn compile(&mut self) -> Result<Function, ExpError> {
         while !self.at_end() {
             self.declaration()?;
@@ -145,14 +149,32 @@ impl Compiler {
             function: Default::default(),
             function_type: fun_type,
         };
+        compiler.function.name = self.previous().lexeme.clone();
         compiler.begin_scope()?;
 
         compiler.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
+
+        if !compiler.check(TokenType::RightParen) {
+            loop {
+                let func = compiler.current_function_mut();
+                func.arity += 1;
+                let parameter_name = compiler.parse_variable("Expected parameter name")?;
+                compiler.define_variable(parameter_name)?;
+                if !compiler._match(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+
         compiler.consume(TokenType::RightParen, "Expect ')' after parameters.")?;
         compiler.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
         compiler.block()?;
-        let result = compiler.compile()?;
-        self.emit_constant(Constant::Function(result));
+
+        compiler.emit_return();
+        let func = compiler.function;
+        self.emit_constant(Constant::Function(func));
+        self.current = compiler.current;
+
         Ok(())
     }
 
@@ -283,6 +305,8 @@ impl Compiler {
             self.for_statement()?;
         } else if self._match(TokenType::If) {
             self.if_statement()?;
+        } else if self._match(TokenType::Return) {
+            self.return_statement()?;
         } else if self._match(TokenType::While) {
             self.while_statement()?;
         } else if self._match(TokenType::LeftBrace) {
@@ -291,6 +315,17 @@ impl Compiler {
             self.end_scope()?;
         } else {
             self.expression_statement()?;
+        }
+        Ok(())
+    }
+
+    fn return_statement(&mut self) -> Result<(), ExpError> {
+        if self._match(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
+            self.emit_opt(OpCode::OpReturn)
         }
         Ok(())
     }
@@ -717,8 +752,12 @@ impl Compiler {
     }
 
     fn end(&mut self) {
-        let line = self.current;
-        self.current_chunk().code.push((OpCode::OpReturn, line))
+        // self.emit_opt(OpCode::OpReturn);
+    }
+
+    fn emit_return(&mut self) {
+        self.emit_opt(OpCode::OpNil);
+        self.emit_opt(OpCode::OpReturn);
     }
 
     fn advance(&mut self) -> &Token {

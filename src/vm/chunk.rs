@@ -58,21 +58,6 @@ impl Chunk {
         return constant;
     }
 
-    pub fn find_function(&self, name: String) -> Option<Function> {
-        for constant in &self.constants {
-            match constant {
-                Constant::Function(f) => {
-                    if f.name.eq(&name) {
-                        return Some(f.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        return None;
-    }
-
     pub fn add_constant(&mut self, val: Constant) -> usize {
         let constants_index = self.constants.len();
         self.constants.push(val);
@@ -90,10 +75,23 @@ impl Chunk {
         let (opt, lineno) = self.code.get(index).expect("want instruction");
         let formatted_op = match opt {
             OpCode::OpReturn => "OP_RETURN".to_string(),
-            OpCode::OpConstant(const_idx) => format!(
-                "OP_CONSTANT {:?} (idx={})",
-                self.constants[*const_idx], *const_idx
-            ),
+            OpCode::OpConstant(const_idx) => {
+                let constant = self.constants[*const_idx].clone();
+
+                return match constant {
+                    Constant::Function(func) => {
+                        func.chunk.disassemble(func.name.as_str());
+                        println!("== {} ==", func.name.as_str());
+                        "".to_string();
+                    }
+                    _ => {
+                        format!(
+                            "OP_CONSTANT {:?} (idx={})",
+                            constant.clone(), *const_idx
+                        );
+                    }
+                };
+            }
             OpCode::OpNil => "OP_NIL".to_string(),
             OpCode::OpTrue => "OP_TRUE".to_string(),
             OpCode::OpFalse => "OP_FALSE".to_string(),
@@ -116,7 +114,7 @@ impl Chunk {
             OpCode::JumpIfFalse(offset) => format!("JUMP_IF_FALSE: {}", offset),
             OpCode::Jump(offset) => format!("JUMP: {}", offset),
             OpCode::Loop(offset) => format!("LOOP: {}", offset),
-            OpCode::Call(count) => format!("CALL: {}", count),
+            OpCode::Call(count) => format!("CALL: ARGS_SIZE {}", count),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }

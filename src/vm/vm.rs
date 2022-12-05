@@ -1,6 +1,8 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 
+use log::debug;
+
 use crate::{cast, types};
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
@@ -10,6 +12,12 @@ pub struct CallFrame {
     function: Function,
     ip: usize,
     slots_offset: usize,
+}
+
+impl CallFrame {
+    fn read_constant(&self, idx: usize) -> Constant {
+        self.function.chunk.constants[idx].clone()
+    }
 }
 
 pub enum FunctionType {
@@ -39,16 +47,26 @@ impl VirtualMachine {
     pub fn interpret(&mut self, function: Function) -> Result<(), InterpreterError> {
         self.prepare_interpret(function);
         self.run()?;
-        self.call_frames.pop();
+
         Ok(())
     }
 
-    fn current_frame(&self) -> CallFrame {
-        return (*self.call_frames.last().expect("should exist")).clone();
+    fn pop_stack_n_times(&mut self, num_to_pop: usize) {
+        for _ in 0..num_to_pop {
+            self.pop_stack();
+        }
+    }
+
+    fn frame_mut(&mut self) -> &mut CallFrame {
+        let last = self.call_frames.len() - 1;
+        return &mut self.call_frames[last];
+    }
+    fn frame(&self) -> &CallFrame {
+        return self.call_frames.last().expect("should exist");
     }
 
     fn current_chuck(&self) -> Chunk {
-        return self.current_frame().function.chunk;
+        return self.frame().clone().function.chunk;
     }
 
     fn run(&mut self) -> Result<(), InterpreterError> {
@@ -61,17 +79,34 @@ impl VirtualMachine {
     }
 
     fn is_done(&self) -> bool {
-        self.call_frames.is_empty() || self.current_frame().ip >= self.current_frame().function.chunk.code.len()
+        self.call_frames.is_empty() || self.frame().ip >= self.frame().function.chunk.code.len()
+    }
+
+    fn next_op_and_advance(&mut self) -> (OpCode, usize) {
+        let frame = self.frame_mut();
+        let chuck = frame.function.chunk.clone();
+        let result = chuck.code.get(frame.ip).expect("never here").clone();
+        frame.ip += 1;
+        return result;
     }
 
     fn step(&mut self) -> Result<(), InterpreterError> {
-        let mut frame = self.current_frame();
-        let chuck = self.current_chuck();
-        let opt = chuck.code.get(frame.ip).expect("never here").clone();
-
+        let opt = self.next_op_and_advance();
         match opt {
             (OpCode::OpReturn, _) => {
-                println!("{:?}", self.pop_stack());
+                let result = self.pop_stack();
+
+                if self.call_frames.len() <= 1 {
+                    self.call_frames.pop();
+                    return Ok(());
+                }
+
+                let num_to_pop = self.stack.len() - self.frame().slots_offset + self.frame().function.arity;
+                self.call_frames.pop();
+                self.pop_stack_n_times(num_to_pop);
+
+                self.stack.push(result.clone());
+                debug!("return value: {:?}", result.clone())
             }
             (OpCode::OpNegate, _) => {
                 let new_value = match self.pop_stack() {
@@ -85,7 +120,7 @@ impl VirtualMachine {
                 self.push(new_value);
             }
             (OpCode::OpConstant(index), _) => {
-                let val: Value = chuck.constants.get(index).expect("should be exit").clone().into();
+                let val: Value = self.frame().read_constant(index).into();
                 self.push(val);
             }
             (OpCode::OpAdd, _) | (OpCode::OpSubtract, _) | (OpCode::OpMultiply, _) | (OpCode::OpDivide, _) => {
@@ -134,56 +169,75 @@ impl VirtualMachine {
             }
             (OpCode::OpDefineGlobal(index), _) => {
                 let value = self.pop_stack();
-                let key = cast!(chuck.get_constant(index), Constant::String);
+                let key = cast!(self.frame().read_constant(index), Constant::String);
 
                 self.globals.insert(key, value);
             }
             (OpCode::OpGetGlobal(index), _) => {
-                let key = cast!(chuck.get_constant(index), Constant::String);
+                let key = cast!(self.frame().read_constant(index), Constant::String);
                 let val = self.globals.get(key.as_str()).expect("not found in globals").clone();
                 self.push(val);
             }
             (OpCode::OpSetGlobal(index), _) => {
-                let key = cast!(chuck.get_constant(index), Constant::String);
+                let key = cast!(self.frame().read_constant(index), Constant::String);
                 let val = self.stack.last().expect("expect last").clone();
                 self.globals.insert(key, val);
             }
             (OpCode::OpGetLocal(index), _) => {
-                let slots_offset = frame.slots_offset;
-                let val = self.stack[slots_offset + index - 1].clone();
+                let slots_offset = self.frame().slots_offset;
+                let val = self.stack[slots_offset + index].clone();
                 self.push(val)
             }
             (OpCode::OpSetLocal(index), _) => {
-                let slots_offset = frame.slots_offset;
+                let slots_offset = self.frame().slots_offset;
                 let val = self.stack.last().expect("expect last").clone();
-                self.stack[slots_offset + index - 1] = val;
+                self.stack[slots_offset + index] = val;
             }
             (OpCode::JumpIfFalse(jump_location), _) => {
-                let condition = cast!(self.stack.last().expect("expect last").clone(), Value::Bool);
+                let last = self.stack.len() - 1;
+                let condition = cast!(self.stack[last].clone(), Value::Bool);
                 if !condition {
-                    frame.ip += jump_location;
+                    self.frame_mut().ip += jump_location;
                 }
             }
             (OpCode::Jump(jump_location), _) => {
-                frame.ip += jump_location;
+                self.frame_mut().ip += jump_location;
             }
             (OpCode::Loop(offset), _) => {
-                frame.ip -= offset
+                self.frame_mut().ip -= offset
             }
             (OpCode::Call(args_count), _) => {
-                self.call(self.stack.get(self.stack.len() - args_count).expect("should exit").clone(), args_count)?;
+                self.call(self.stack.get(self.stack.len() - args_count - 1).expect("should exit").clone(), args_count)?;
+                debug!("call function, increment call frame");
             }
         }
 
-        frame.ip += 1;
-        let last = self.call_frames.len() - 1;
-        self.call_frames[last] = frame;
+
         Ok(())
     }
+
+    pub fn find_function(&self, name: String) -> Option<Function> {
+        for i in (0..self.call_frames.len()).rev() {
+            let call_frame = &self.call_frames[i];
+            for constant in &call_frame.function.chunk.constants {
+                match constant {
+                    Constant::Function(f) => {
+                        if f.name.eq(&name) {
+                            return Some(f.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        return None;
+    }
+
     fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
         match callee {
             Value::LoxFunc(name, _) => {
-                match self.current_chuck().find_function(name) {
+                match self.find_function(name) {
                     None => panic!("Cannot call not function type"),
                     Some(fx) => {
                         self.call_frames.push(CallFrame {
@@ -213,6 +267,8 @@ impl VirtualMachine {
     fn binary_opt(&mut self, opt: OpCode) {
         let x = self.pop_stack();
         let y = self.pop_stack();
+
+        debug!("call binary opt: {:?}, x: {:?} y: {:?}", opt,x, y);
 
         let new_value = match x {
             Value::Number(x) => {

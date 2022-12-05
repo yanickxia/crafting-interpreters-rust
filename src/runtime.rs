@@ -42,7 +42,7 @@ impl VMRuntime {
         match compiler.compile() {
             Ok(func) => {
                 if self.disassemble {
-                    func.chunk.disassemble("default");
+                    func.chunk.disassemble("main");
                     return;
                 }
                 match self.vm.interpret(func) {
