@@ -19,9 +19,11 @@ pub struct VMRuntime {
 
 impl Default for VMRuntime {
     fn default() -> Self {
+        let mut machine = vm::VirtualMachine::default();
+        machine.init();
         return VMRuntime {
             had_error: false,
-            vm: vm::VirtualMachine::default(),
+            vm: machine,
             disassemble: false,
         };
     }

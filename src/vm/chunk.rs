@@ -1,10 +1,26 @@
-use crate::types::val::Value;
+use std::fmt::{Debug, Formatter};
+
+use crate::types::val::{InterpreterError, Value};
+use crate::vm::vm::VirtualMachine;
 
 #[derive(Default, Clone, Debug)]
 pub struct Function {
     pub arity: usize,
     pub chunk: Chunk,
     pub name: String,
+}
+
+#[derive(Clone)]
+pub struct NativeFunction {
+    pub arity: usize,
+    pub name: String,
+    pub func: fn(&mut VirtualMachine, &[Value]) -> Result<Value, InterpreterError>,
+}
+
+impl Debug for NativeFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NativeFunction({})", self.name)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -5,7 +5,8 @@ use log::debug;
 
 use crate::{cast, types};
 use crate::types::val::{InterpreterError, Value};
-use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
+use crate::vm::builtins;
+use crate::vm::chunk::{Chunk, Constant, Function, NativeFunction, OpCode};
 
 #[derive(Default, Clone)]
 pub struct CallFrame {
@@ -33,7 +34,18 @@ pub struct VirtualMachine {
 }
 
 impl VirtualMachine {
-    pub fn init() {}
+    pub fn init(&mut self) {
+        self.globals.insert("clock".to_string(), Value::NativeFunc(NativeFunction {
+            arity: 0,
+            name: "clock".to_string(),
+            func: builtins::clock,
+        }));
+        self.globals.insert("sleep".to_string(), Value::NativeFunc(NativeFunction {
+            arity: 1,
+            name: "sleep".to_string(),
+            func: builtins::sleep,
+        }));
+    }
     pub fn destroy() {}
 
     fn prepare_interpret(&mut self, func: Function) {
@@ -248,11 +260,24 @@ impl VirtualMachine {
                     }
                 }
             }
+            Value::NativeFunc(native) => {
+                let mut values = vec![];
+                for _ in 0..native.arity {
+                    values.push(self.pop_stack());
+                }
+                values.reverse();
+                // native function value
+                self.pop_stack();
+
+                let result = (native.func)(self, values.as_slice())?;
+                self.push(result);
+            }
             _ => panic!("can't call")
         }
 
         Ok(())
     }
+
 
     pub fn pop_stack(&mut self) -> Value {
         match self.stack.pop() {
