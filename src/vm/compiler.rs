@@ -7,7 +7,9 @@ use crate::types::expr::{ExpError, Literal};
 use crate::types::token::{Token, TokenType};
 use crate::types::val::Value;
 use crate::vm::chunk;
-use crate::vm::chunk::{Chunk, Constant, OpCode};
+use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
+use crate::vm::chunk::OpCode::OpPop;
+use crate::vm::vm::FunctionType;
 
 type ConstantIndex = usize;
 type LocalIndex = usize;
@@ -77,37 +79,80 @@ pub struct Local {
     depth: i32,
 }
 
-#[derive(Default)]
 pub struct Compiler {
     tokens: Vec<Token>,
     current: usize,
-    compiling: Chunk,
     scope_depth: usize,
     locals: Vec<Local>,
+    function: Function,
+    function_type: FunctionType,
 }
 
 impl Compiler {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        let mut compiler = Self::default();
-        compiler.tokens = tokens;
+    pub fn new(tokens: Vec<Token>, function_type: FunctionType) -> Self {
+        let mut compiler = Self {
+            tokens,
+            current: 0,
+            scope_depth: 0,
+            locals: vec![],
+            function: Default::default(),
+            function_type,
+        };
         return compiler;
     }
 
-    pub fn compile(&mut self) -> Result<Chunk, ExpError> {
+    pub fn current_chunk(&mut self) -> &mut Chunk {
+        return &mut self.function.chunk;
+    }
+
+    pub fn current_line(&self) -> usize {
+        return self.current;
+    }
+
+    pub fn compile(&mut self) -> Result<Function, ExpError> {
         while !self.at_end() {
             self.declaration()?;
         }
-
-        Ok(self.compiling.clone())
+        self.end();
+        Ok(self.function.clone())
     }
 
     fn declaration(&mut self) -> Result<(), ExpError> {
-        if self._match(TokenType::Var) {
+        if self._match(TokenType::Fun) {
+            self.fun_declaration()?;
+        } else if self._match(TokenType::Var) {
             self.var_declaration()?;
         } else {
             self.statement()?;
         }
 
+        Ok(())
+    }
+
+    fn fun_declaration(&mut self) -> Result<(), ExpError> {
+        let function_name = self.parse_variable("expect function name")?;
+        self.mark_initialized()?;
+        self.function(FunctionType::Function)?;
+        self.define_variable(function_name)
+    }
+
+    fn function(&mut self, fun_type: FunctionType) -> Result<(), ExpError> {
+        let mut compiler = Self {
+            tokens: self.tokens.clone(),
+            current: self.current,
+            scope_depth: 0,
+            locals: vec![],
+            function: Default::default(),
+            function_type: fun_type,
+        };
+        compiler.begin_scope()?;
+
+        compiler.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
+        compiler.consume(TokenType::RightParen, "Expect ')' after parameters.")?;
+        compiler.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
+        compiler.block()?;
+        let result = compiler.compile()?;
+        self.emit_constant(Constant::Function(result));
         Ok(())
     }
 
@@ -126,6 +171,10 @@ impl Compiler {
     }
 
     fn mark_initialized(&mut self) -> Result<(), ExpError> {
+        if self.scope_depth == 0 {
+            return Ok(());
+        }
+
         let mut last = (*self.locals.last().expect("should exist")).clone();
         last.depth = self.scope_depth as i32;
         let last_index = self.locals.len() - 1;
@@ -141,6 +190,27 @@ impl Compiler {
 
         self.emit_opt(OpCode::OpDefineGlobal(val));
         Ok(())
+    }
+
+    fn call(&mut self, _: bool) -> Result<(), ExpError> {
+        let args = self.argument_list()?;
+        self.emit_opt(OpCode::Call(args));
+        Ok(())
+    }
+
+    fn argument_list(&mut self) -> Result<usize, ExpError> {
+        let mut count = 0 as usize;
+        if !self.check(TokenType::RightParen) {
+            loop {
+                self.expression()?;
+                count += 1;
+                if !self._match(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.")?;
+        return Ok(count);
     }
 
     fn and(&mut self, _: bool) -> Result<(), ExpError> {
@@ -172,7 +242,7 @@ impl Compiler {
 
 
         let previous = self.previous().clone();
-        let i = self.compiling.add_constant(Constant::String(previous.lexeme));
+        let i = self.current_chunk().add_constant(Constant::String(previous.lexeme));
         return Ok(i);
     }
 
@@ -234,7 +304,7 @@ impl Compiler {
             self.expression_statement()?;
         }
 
-        let mut loop_start = self.compiling.code.len();
+        let mut loop_start = self.current_chunk().code.len();
         let mut exit_jump = None;
         if !self._match(TokenType::Semicolon) {
             self.expression()?;
@@ -242,10 +312,10 @@ impl Compiler {
             exit_jump = Some(self.emit_jump(OpCode::JumpIfFalse(0)));
             self.emit_opt(OpCode::OpPop);
         }
-        
+
         if !self._match(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::Jump(0));
-            let increment_start = self.compiling.code.len();
+            let increment_start = self.current_chunk().code.len();
             self.expression()?;
             self.emit_opt(OpCode::OpPop);
             self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
@@ -270,7 +340,7 @@ impl Compiler {
     }
 
     fn while_statement(&mut self) -> Result<(), ExpError> {
-        let loop_start = self.compiling.code.len();
+        let loop_start = self.current_chunk().code.len();
         self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
         self.expression()?;
         self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
@@ -286,7 +356,8 @@ impl Compiler {
     }
 
     fn emit_loop(&mut self, loop_start: usize) {
-        self.emit_opt(OpCode::Loop(self.compiling.code.len() - loop_start + 1))
+        let i = self.current_chunk().code.len() - loop_start + 1;
+        self.emit_opt(OpCode::Loop(i))
     }
 
     fn if_statement(&mut self) -> Result<(), ExpError> {
@@ -310,18 +381,18 @@ impl Compiler {
 
     fn emit_jump(&mut self, opt: OpCode) -> usize {
         self.emit_opt(opt);
-        self.compiling.code.len() - 1
+        self.current_chunk().code.len() - 1
     }
 
     fn patch_jump(&mut self, jump_location: usize) {
-        let true_jump = self.compiling.code.len() - jump_location - 1;
-        let (jump, line) = &self.compiling.code[jump_location];
+        let true_jump = self.current_chunk().code.len() - jump_location - 1;
+        let (jump, line) = &self.current_chunk().code[jump_location];
         match jump {
             OpCode::JumpIfFalse(_) => {
-                self.compiling.code[jump_location] = (OpCode::JumpIfFalse(true_jump), *line)
+                self.current_chunk().code[jump_location] = (OpCode::JumpIfFalse(true_jump), *line)
             }
             OpCode::Jump(_) => {
-                self.compiling.code[jump_location] = (OpCode::Jump(true_jump), *line)
+                self.current_chunk().code[jump_location] = (OpCode::Jump(true_jump), *line)
             }
             _ => panic!("not here")
         }
@@ -368,8 +439,8 @@ impl Compiler {
             ParseFn::Variable => self.variable(can_assign),
             ParseFn::And => self.and(can_assign),
             ParseFn::Or => self.or(can_assign),
+            ParseFn::Call => self.call(can_assign),
             _ => panic!("not here"),
-            // ParseFn::Call => self.call(can_assign),
             // ParseFn::Dot => self.dot(can_assign),
             // ParseFn::This => self.this(can_assign),
             // ParseFn::Super => self.super_(can_assign),
@@ -387,7 +458,7 @@ impl Compiler {
                     Some(s) => {
                         match s {
                             token::Literal::Str(s) => {
-                                let index = self.compiling.add_constant(Constant::String(s));
+                                let index = self.current_chunk().add_constant(Constant::String(s));
                                 self.emit_opt(OpCode::OpConstant(index))
                             }
                             _ => panic!("not here")
@@ -408,7 +479,7 @@ impl Compiler {
     fn named_variable(&mut self, name: String, can_assign: bool) -> Result<(), ExpError> {
         match self.resolve_local(name.clone())? {
             None => {
-                let index = self.compiling.add_constant(Constant::String(name.clone()));
+                let index = self.current_chunk().add_constant(Constant::String(name.clone()));
                 if can_assign && self._match(TokenType::Equal) {
                     self.expression()?;
                     self.emit_opt(OpCode::OpSetGlobal(index));
@@ -633,17 +704,21 @@ impl Compiler {
 
 
     fn emit_constant(&mut self, val: Constant) {
-        let index = self.compiling.add_constant(val);
-        self.compiling.code.push((OpCode::OpConstant(index), self.current))
+        let line = self.current;
+        let compiling = self.current_chunk();
+        let index = compiling.add_constant(val);
+        compiling.code.push((OpCode::OpConstant(index), line))
     }
 
 
     fn emit_opt(&mut self, opt: OpCode) {
-        self.compiling.code.push((opt, self.current))
+        let line = self.current;
+        self.current_chunk().code.push((opt, line))
     }
 
     fn end(&mut self) {
-        self.compiling.code.push((OpCode::OpReturn, self.current))
+        let line = self.current;
+        self.current_chunk().code.push((OpCode::OpReturn, line))
     }
 
     fn advance(&mut self) -> &Token {

@@ -8,6 +8,7 @@ use crate::types::expr::ExpError;
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::{compiler, vm};
 use crate::vm::chunk::Constant;
+use crate::vm::vm::FunctionType;
 
 pub struct VMRuntime {
     had_error: bool,
@@ -37,14 +38,14 @@ impl VMRuntime {
 
     fn run(&mut self, file: String) {
         let tokens = scanner::scan_tokens(file);
-        let mut compiler = compiler::Compiler::new(tokens.unwrap());
+        let mut compiler = compiler::Compiler::new(tokens.unwrap(), FunctionType::Script);
         match compiler.compile() {
-            Ok(chuck) => {
+            Ok(func) => {
                 if self.disassemble {
-                    chuck.disassemble("default");
+                    func.chunk.disassemble("default");
                     return;
                 }
-                match self.vm.interpret(&chuck) {
+                match self.vm.interpret(func) {
                     Ok(_) => {
                         let mut i = self.vm.stack.len();
                         loop {

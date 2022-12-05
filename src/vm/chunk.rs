@@ -1,5 +1,12 @@
 use crate::types::val::Value;
 
+#[derive(Default, Clone, Debug)]
+pub struct Function {
+    pub arity: usize,
+    pub chunk: Chunk,
+    pub name: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum OpCode {
     OpReturn,
@@ -26,7 +33,7 @@ pub enum OpCode {
     JumpIfFalse(usize),
     Jump(usize),
     Loop(usize),
-
+    Call(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -34,11 +41,12 @@ pub enum Constant {
     Number(f64),
     Bool(bool),
     String(String),
+    Function(Function),
     Nil,
 }
 
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Chunk {
     pub code: Vec<(OpCode, usize)>,
     pub constants: Vec<Constant>,
@@ -48,6 +56,21 @@ impl Chunk {
     pub fn get_constant(&self, index: usize) -> Constant {
         let constant = self.constants[index].clone();
         return constant;
+    }
+
+    pub fn find_function(&self, name: String) -> Option<Function> {
+        for constant in &self.constants {
+            match constant {
+                Constant::Function(f) => {
+                    if f.name.eq(&name) {
+                        return Some(f.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        return None;
     }
 
     pub fn add_constant(&mut self, val: Constant) -> usize {
@@ -93,6 +116,7 @@ impl Chunk {
             OpCode::JumpIfFalse(offset) => format!("JUMP_IF_FALSE: {}", offset),
             OpCode::Jump(offset) => format!("JUMP: {}", offset),
             OpCode::Loop(offset) => format!("LOOP: {}", offset),
+            OpCode::Call(count) => format!("CALL: {}", count),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }

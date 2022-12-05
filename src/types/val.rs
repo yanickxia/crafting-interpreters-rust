@@ -37,6 +37,9 @@ impl From<Constant> for Value {
             Constant::String(s) => {
                 Value::String(s)
             }
+            Constant::Function(func) => {
+                Value::LoxFunc(func.name, func.arity)
+            }
         };
     }
 }

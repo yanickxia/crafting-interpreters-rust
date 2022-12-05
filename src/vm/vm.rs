@@ -1,133 +1,200 @@
+use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 
 use crate::{cast, types};
 use crate::types::val::{InterpreterError, Value};
-use crate::vm::chunk::{Chunk, Constant, OpCode};
+use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
+
+#[derive(Default, Clone)]
+pub struct CallFrame {
+    function: Function,
+    ip: usize,
+    slots_offset: usize,
+}
+
+pub enum FunctionType {
+    Function,
+    Script,
+}
 
 #[derive(Default)]
 pub struct VirtualMachine {
-    pub current: Chunk,
+    pub call_frames: Vec<CallFrame>,
     pub stack: Vec<Value>,
     pub globals: HashMap<String, Value>,
-    ip: usize,
 }
 
 impl VirtualMachine {
     pub fn init() {}
     pub fn destroy() {}
 
-    pub fn interpret(&mut self, chuck: &Chunk) -> Result<(), InterpreterError> {
-        self.current = chuck.clone();
-        self.run()
+    fn prepare_interpret(&mut self, func: Function) {
+        self.call_frames.push(CallFrame {
+            function: func,
+            ip: 0,
+            slots_offset: 1,
+        });
+    }
+
+    pub fn interpret(&mut self, function: Function) -> Result<(), InterpreterError> {
+        self.prepare_interpret(function);
+        self.run()?;
+        self.call_frames.pop();
+        Ok(())
+    }
+
+    fn current_frame(&self) -> CallFrame {
+        return (*self.call_frames.last().expect("should exist")).clone();
+    }
+
+    fn current_chuck(&self) -> Chunk {
+        return self.current_frame().function.chunk;
     }
 
     fn run(&mut self) -> Result<(), InterpreterError> {
-        self.step()
+        loop {
+            if self.is_done() {
+                return Ok(());
+            }
+            self.step()?;
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.call_frames.is_empty() || self.current_frame().ip >= self.current_frame().function.chunk.code.len()
     }
 
     fn step(&mut self) -> Result<(), InterpreterError> {
-        while self.ip != self.current.code.len() {
-            let opt = self.current.code.get(self.ip).expect("never here").clone();
-            match opt {
-                (OpCode::OpReturn, _) => {
-                    println!("{:?}", self.pop_stack());
-                }
-                (OpCode::OpNegate, _) => {
-                    let new_value = match self.pop_stack() {
-                        Value::Number(val) => {
-                            Value::Number(-val)
-                        }
-                        _ => {
-                            panic!("can't negate")
-                        }
-                    };
-                    self.push(new_value);
-                }
-                (OpCode::OpConstant(index), _) => {
-                    let val: Value = self.current.constants.get(index).expect("should be exit").clone().into();
-                    self.push(val);
-                }
-                (OpCode::OpAdd, _) | (OpCode::OpSubtract, _) | (OpCode::OpMultiply, _) | (OpCode::OpDivide, _) => {
-                    self.binary_opt(opt.0.clone())
-                }
-                (OpCode::OpNil, _) => {
-                    self.push(Value::Nil)
-                }
-                (OpCode::OpTrue, _) => {
-                    self.push(Value::Bool(true))
-                }
-                (OpCode::OpFalse, _) => {
-                    self.push(Value::Bool(false))
-                }
-                (OpCode::OpNot, _) => {
-                    match self.pop_stack() {
-                        Value::Bool(b) => {
-                            self.push(Value::Bool(!b))
-                        }
-                        Value::Nil => {
-                            self.push(Value::Bool(true))
-                        }
-                        _ => panic!("not execute opt not")
-                    }
-                }
-                (OpCode::OpEqual, _) => {
-                    let a = self.pop_stack();
-                    let b = self.pop_stack();
-                    self.push(Value::Bool(a.eq(&b)));
-                }
-                (OpCode::OpGreater, _) => {
-                    let a = self.pop_stack();
-                    let b = self.pop_stack();
-                    self.push(Value::Bool(b > a));
-                }
-                (OpCode::OpLess, _) => {
-                    let a = self.pop_stack();
-                    let b = self.pop_stack();
-                    self.push(Value::Bool(b < a));
-                }
-                (OpCode::OpPrint, _) => {
-                    println!("{:?}", self.pop_stack());
-                }
-                (OpCode::OpPop, _) => {
-                    self.pop_stack();
-                }
-                (OpCode::OpDefineGlobal(index), _) => {
-                    let value = self.pop_stack();
-                    let key = cast!(self.current.get_constant(index), Constant::String);
+        let mut frame = self.current_frame();
+        let chuck = self.current_chuck();
+        let opt = chuck.code.get(frame.ip).expect("never here").clone();
 
-                    self.globals.insert(key, value);
-                }
-                (OpCode::OpGetGlobal(index), _) => {
-                    let key = cast!(self.current.get_constant(index), Constant::String);
-                    let val = self.globals.get(key.as_str()).expect("not found in globals").clone();
-                    self.push(val);
-                }
-                (OpCode::OpSetGlobal(index), _) => {
-                    let key = cast!(self.current.get_constant(index), Constant::String);
-                    let val = self.stack.last().expect("expect last").clone();
-                    self.globals.insert(key, val);
-                }
-                (OpCode::OpGetLocal(index), _) => {
-                    self.push(self.stack[index].clone())
-                }
-                (OpCode::OpSetLocal(index), _) => {
-                    let val = self.stack.last().expect("expect last").clone();
-                    self.stack[index] = val;
-                }
-                (OpCode::JumpIfFalse(jump_location), _) => {
-                    let condition = cast!(self.stack.last().expect("expect last").clone(), Value::Bool);
-                    if !condition {
-                        self.ip += jump_location;
+        match opt {
+            (OpCode::OpReturn, _) => {
+                println!("{:?}", self.pop_stack());
+            }
+            (OpCode::OpNegate, _) => {
+                let new_value = match self.pop_stack() {
+                    Value::Number(val) => {
+                        Value::Number(-val)
                     }
-                }
-                (OpCode::Jump(jump_location), _) => {
-                    self.ip += jump_location;
-                }
-                (OpCode::Loop(offset), _) => {
-                    self.ip -= offset
+                    _ => {
+                        panic!("can't negate")
+                    }
+                };
+                self.push(new_value);
+            }
+            (OpCode::OpConstant(index), _) => {
+                let val: Value = chuck.constants.get(index).expect("should be exit").clone().into();
+                self.push(val);
+            }
+            (OpCode::OpAdd, _) | (OpCode::OpSubtract, _) | (OpCode::OpMultiply, _) | (OpCode::OpDivide, _) => {
+                self.binary_opt(opt.0.clone())
+            }
+            (OpCode::OpNil, _) => {
+                self.push(Value::Nil)
+            }
+            (OpCode::OpTrue, _) => {
+                self.push(Value::Bool(true))
+            }
+            (OpCode::OpFalse, _) => {
+                self.push(Value::Bool(false))
+            }
+            (OpCode::OpNot, _) => {
+                match self.pop_stack() {
+                    Value::Bool(b) => {
+                        self.push(Value::Bool(!b))
+                    }
+                    Value::Nil => {
+                        self.push(Value::Bool(true))
+                    }
+                    _ => panic!("not execute opt not")
                 }
             }
-            self.ip += 1
+            (OpCode::OpEqual, _) => {
+                let a = self.pop_stack();
+                let b = self.pop_stack();
+                self.push(Value::Bool(a.eq(&b)));
+            }
+            (OpCode::OpGreater, _) => {
+                let a = self.pop_stack();
+                let b = self.pop_stack();
+                self.push(Value::Bool(b > a));
+            }
+            (OpCode::OpLess, _) => {
+                let a = self.pop_stack();
+                let b = self.pop_stack();
+                self.push(Value::Bool(b < a));
+            }
+            (OpCode::OpPrint, _) => {
+                println!("{:?}", self.pop_stack());
+            }
+            (OpCode::OpPop, _) => {
+                self.pop_stack();
+            }
+            (OpCode::OpDefineGlobal(index), _) => {
+                let value = self.pop_stack();
+                let key = cast!(chuck.get_constant(index), Constant::String);
+
+                self.globals.insert(key, value);
+            }
+            (OpCode::OpGetGlobal(index), _) => {
+                let key = cast!(chuck.get_constant(index), Constant::String);
+                let val = self.globals.get(key.as_str()).expect("not found in globals").clone();
+                self.push(val);
+            }
+            (OpCode::OpSetGlobal(index), _) => {
+                let key = cast!(chuck.get_constant(index), Constant::String);
+                let val = self.stack.last().expect("expect last").clone();
+                self.globals.insert(key, val);
+            }
+            (OpCode::OpGetLocal(index), _) => {
+                let slots_offset = frame.slots_offset;
+                let val = self.stack[slots_offset + index - 1].clone();
+                self.push(val)
+            }
+            (OpCode::OpSetLocal(index), _) => {
+                let slots_offset = frame.slots_offset;
+                let val = self.stack.last().expect("expect last").clone();
+                self.stack[slots_offset + index - 1] = val;
+            }
+            (OpCode::JumpIfFalse(jump_location), _) => {
+                let condition = cast!(self.stack.last().expect("expect last").clone(), Value::Bool);
+                if !condition {
+                    frame.ip += jump_location;
+                }
+            }
+            (OpCode::Jump(jump_location), _) => {
+                frame.ip += jump_location;
+            }
+            (OpCode::Loop(offset), _) => {
+                frame.ip -= offset
+            }
+            (OpCode::Call(args_count), _) => {
+                self.call(self.stack.get(self.stack.len() - args_count).expect("should exit").clone(), args_count)?;
+            }
+        }
+
+        frame.ip += 1;
+        let last = self.call_frames.len() - 1;
+        self.call_frames[last] = frame;
+        Ok(())
+    }
+    fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
+        match callee {
+            Value::LoxFunc(name, _) => {
+                match self.current_chuck().find_function(name) {
+                    None => panic!("Cannot call not function type"),
+                    Some(fx) => {
+                        self.call_frames.push(CallFrame {
+                            function: fx,
+                            ip: 0,
+                            slots_offset: self.stack.len() - arg_count,
+                        })
+                    }
+                }
+            }
+            _ => panic!("can't call")
         }
 
         Ok(())
