@@ -3,7 +3,13 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use crate::types::{class, expr};
-use crate::vm::chunk::{Constant, NativeFunction};
+use crate::vm::chunk::{Closure, Constant, Function, NativeFunction};
+
+#[derive(Debug, Clone)]
+pub enum UpValue {
+    Open(usize),
+    Closed(Box<Value>),
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -21,6 +27,8 @@ pub enum Value {
     // for fast return
     Ret(Box<Value>),
     NativeFunc(NativeFunction),
+    Closure(Closure),
+    UpValue(UpValue),
 }
 
 impl From<Constant> for Value {

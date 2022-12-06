@@ -1,7 +1,14 @@
 use std::fmt::{Debug, Formatter};
 
-use crate::types::val::{InterpreterError, Value};
+use crate::types::val::{InterpreterError, UpValue, Value};
+use crate::vm::compiler;
 use crate::vm::vm::VirtualMachine;
+
+#[derive(Default, Clone, Debug)]
+pub struct Closure {
+    pub function: Function,
+    pub up_values: Vec<UpValue>,
+}
 
 #[derive(Default, Clone, Debug)]
 pub struct Function {
@@ -46,11 +53,15 @@ pub enum OpCode {
     OpSetGlobal(usize),
     OpGetLocal(usize),
     OpSetLocal(usize),
-    JumpIfFalse(usize),
-    Jump(usize),
-    Loop(usize),
-    Call(usize),
+    OpJumpIfFalse(usize),
+    OpJump(usize),
+    OpLoop(usize),
+    OpCall(usize),
+    OpClosure(Vec<compiler::UpValue>),
+    OpGetUpValue(usize),
+    OpSetUpValue(usize),
 }
+
 
 #[derive(Debug, Clone)]
 pub enum Constant {
@@ -127,10 +138,13 @@ impl Chunk {
             OpCode::OpSetGlobal(index) => format!("OP_SET_GLOBAL: {:?}", self.constants[*index]),
             OpCode::OpGetLocal(index) => format!("OP_GET_LOCAL: {}", index),
             OpCode::OpSetLocal(index) => format!("OP_SET_LOCAL: {}", index),
-            OpCode::JumpIfFalse(offset) => format!("JUMP_IF_FALSE: {}", offset),
-            OpCode::Jump(offset) => format!("JUMP: {}", offset),
-            OpCode::Loop(offset) => format!("LOOP: {}", offset),
-            OpCode::Call(count) => format!("CALL: ARGS_SIZE {}", count),
+            OpCode::OpJumpIfFalse(offset) => format!("OP_JUMP_IF_FALSE: {}", offset),
+            OpCode::OpJump(offset) => format!("OP_JUMP: {}", offset),
+            OpCode::OpLoop(offset) => format!("OP_LOOP: {}", offset),
+            OpCode::OpCall(count) => format!("OP_CALL: ARGS_SIZE {}", count),
+            OpCode::OpClosure(cls) => format!("OP_CLOSURE "),
+            OpCode::OpGetUpValue(index) => format!("OP_GET_UP_VALUE: {}", index),
+            OpCode::OpSetUpValue(index) => format!("OP_SET_UP_VALUE: {}", index),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }

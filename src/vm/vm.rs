@@ -4,20 +4,21 @@ use std::collections::HashMap;
 use log::debug;
 
 use crate::{cast, types};
-use crate::types::val::{InterpreterError, Value};
+use crate::types::val;
+use crate::types::val::{InterpreterError, UpValue, Value};
 use crate::vm::builtins;
-use crate::vm::chunk::{Chunk, Constant, Function, NativeFunction, OpCode};
+use crate::vm::chunk::{Chunk, Closure, Constant, Function, NativeFunction, OpCode};
 
 #[derive(Default, Clone)]
 pub struct CallFrame {
-    function: Function,
+    closure: Closure,
     ip: usize,
     slots_offset: usize,
 }
 
 impl CallFrame {
     fn read_constant(&self, idx: usize) -> Constant {
-        self.function.chunk.constants[idx].clone()
+        self.closure.function.chunk.constants[idx].clone()
     }
 }
 
@@ -48,16 +49,16 @@ impl VirtualMachine {
     }
     pub fn destroy() {}
 
-    fn prepare_interpret(&mut self, func: Function) {
+    fn prepare_interpret(&mut self, cls: Closure) {
         self.call_frames.push(CallFrame {
-            function: func,
+            closure: cls,
             ip: 0,
             slots_offset: 1,
         });
     }
 
-    pub fn interpret(&mut self, function: Function) -> Result<(), InterpreterError> {
-        self.prepare_interpret(function);
+    pub fn interpret(&mut self, cls: Closure) -> Result<(), InterpreterError> {
+        self.prepare_interpret(cls);
         self.run()?;
 
         Ok(())
@@ -78,7 +79,7 @@ impl VirtualMachine {
     }
 
     fn current_chuck(&self) -> Chunk {
-        return self.frame().clone().function.chunk;
+        return self.frame().clone().closure.function.chunk;
     }
 
     fn run(&mut self) -> Result<(), InterpreterError> {
@@ -91,12 +92,12 @@ impl VirtualMachine {
     }
 
     fn is_done(&self) -> bool {
-        self.call_frames.is_empty() || self.frame().ip >= self.frame().function.chunk.code.len()
+        self.call_frames.is_empty() || self.frame().ip >= self.frame().closure.function.chunk.code.len()
     }
 
     fn next_op_and_advance(&mut self) -> (OpCode, usize) {
         let frame = self.frame_mut();
-        let chuck = frame.function.chunk.clone();
+        let chuck = frame.closure.function.chunk.clone();
         let result = chuck.code.get(frame.ip).expect("never here").clone();
         frame.ip += 1;
         return result;
@@ -113,7 +114,7 @@ impl VirtualMachine {
                     return Ok(());
                 }
 
-                let num_to_pop = self.stack.len() - self.frame().slots_offset + self.frame().function.arity;
+                let num_to_pop = self.stack.len() - self.frame().slots_offset + self.frame().closure.function.arity;
                 self.call_frames.pop();
                 self.pop_stack_n_times(num_to_pop);
 
@@ -197,30 +198,78 @@ impl VirtualMachine {
             }
             (OpCode::OpGetLocal(index), _) => {
                 let slots_offset = self.frame().slots_offset;
-                let val = self.stack[slots_offset + index].clone();
+                let val = self.stack[slots_offset + index - 1].clone();
                 self.push(val)
             }
             (OpCode::OpSetLocal(index), _) => {
                 let slots_offset = self.frame().slots_offset;
                 let val = self.stack.last().expect("expect last").clone();
-                self.stack[slots_offset + index] = val;
+                self.stack[slots_offset + index - 1] = val;
             }
-            (OpCode::JumpIfFalse(jump_location), _) => {
+            (OpCode::OpJumpIfFalse(jump_location), _) => {
                 let last = self.stack.len() - 1;
                 let condition = cast!(self.stack[last].clone(), Value::Bool);
                 if !condition {
                     self.frame_mut().ip += jump_location;
                 }
             }
-            (OpCode::Jump(jump_location), _) => {
+            (OpCode::OpJump(jump_location), _) => {
                 self.frame_mut().ip += jump_location;
             }
-            (OpCode::Loop(offset), _) => {
+            (OpCode::OpLoop(offset), _) => {
                 self.frame_mut().ip -= offset
             }
-            (OpCode::Call(args_count), _) => {
+            (OpCode::OpCall(args_count), _) => {
                 self.call(self.stack.get(self.stack.len() - args_count - 1).expect("should exit").clone(), args_count)?;
                 debug!("call function, increment call frame");
+            }
+            (OpCode::OpClosure(ups), _) => {
+                let func = self.cast_function(self.stack.get(self.stack.len() - 1).expect("should exit").clone())?;
+                let mut closure = Closure {
+                    function: func,
+                    up_values: vec![],
+                };
+
+                let frame = self.frame();
+
+                for i in 0..ups.len() {
+                    let item = &ups[i];
+                    let index = item.index;
+                    if item.is_local {
+                        closure.up_values.push(val::UpValue::Open(frame.slots_offset + index))
+                    } else {
+                        closure.up_values.push(frame.closure.up_values[index].clone())
+                    }
+                }
+                self.push(Value::Closure(closure));
+            }
+
+            (OpCode::OpGetUpValue(index), _) => {
+                let frame = self.frame_mut();
+                let up_value = frame.closure.up_values[index].clone();
+                let val = match up_value {
+                    UpValue::Open(index) => {
+                        self.stack[index].clone()
+                    }
+                    UpValue::Closed(item) => {
+                        *item.clone()
+                    }
+                };
+                self.stack.push(val)
+            }
+            (OpCode::OpSetUpValue(index), _) => {
+                let val = self.stack.last().expect("should exit").clone();
+                let frame = self.frame_mut();
+                let up_value = frame.closure.up_values[index].clone();
+
+                match up_value {
+                    UpValue::Open(index) => {
+                        self.stack[index] = val
+                    }
+                    UpValue::Closed(value) => {
+                        frame.closure.up_values[index] = UpValue::Closed(Box::new(val))
+                    }
+                }
             }
         }
 
@@ -228,10 +277,24 @@ impl VirtualMachine {
         Ok(())
     }
 
+    fn cast_function(&self, callee: Value) -> Result<Function, InterpreterError> {
+        match callee {
+            Value::LoxFunc(name, _) => {
+                match self.find_function(name) {
+                    None => panic!("Cannot call not function type"),
+                    Some(fx) => {
+                        return Ok(fx);
+                    }
+                }
+            }
+            _ => panic!("not found")
+        }
+    }
+
     pub fn find_function(&self, name: String) -> Option<Function> {
         for i in (0..self.call_frames.len()).rev() {
             let call_frame = &self.call_frames[i];
-            for constant in &call_frame.function.chunk.constants {
+            for constant in &call_frame.closure.function.chunk.constants {
                 match constant {
                     Constant::Function(f) => {
                         if f.name.eq(&name) {
@@ -248,18 +311,6 @@ impl VirtualMachine {
 
     fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
         match callee {
-            Value::LoxFunc(name, _) => {
-                match self.find_function(name) {
-                    None => panic!("Cannot call not function type"),
-                    Some(fx) => {
-                        self.call_frames.push(CallFrame {
-                            function: fx,
-                            ip: 0,
-                            slots_offset: self.stack.len() - arg_count,
-                        })
-                    }
-                }
-            }
             Value::NativeFunc(native) => {
                 let mut values = vec![];
                 for _ in 0..native.arity {
@@ -271,6 +322,13 @@ impl VirtualMachine {
 
                 let result = (native.func)(self, values.as_slice())?;
                 self.push(result);
+            }
+            Value::Closure(cls) => {
+                self.call_frames.push(CallFrame {
+                    closure: cls,
+                    ip: 0,
+                    slots_offset: self.stack.len() - arg_count,
+                })
             }
             _ => panic!("can't call")
         }

@@ -7,12 +7,13 @@ use crate::types::expr::{ExpError, Literal};
 use crate::types::token::{Token, TokenType};
 use crate::types::val::Value;
 use crate::vm::chunk;
-use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
+use crate::vm::chunk::{Chunk, Closure, Constant, Function, OpCode};
 use crate::vm::chunk::OpCode::OpPop;
 use crate::vm::vm::FunctionType;
 
 type ConstantIndex = usize;
 type LocalIndex = usize;
+
 
 #[derive(Debug, Copy, Clone)]
 enum ParseFn {
@@ -79,6 +80,12 @@ pub struct Local {
     depth: i32,
 }
 
+#[derive(Clone, Debug)]
+pub struct UpValue {
+    pub index: usize,
+    pub is_local: bool,
+}
+
 pub struct Compiler {
     tokens: Vec<Token>,
     current: usize,
@@ -86,6 +93,8 @@ pub struct Compiler {
     locals: Vec<Local>,
     function: Function,
     function_type: FunctionType,
+    enclosing: Option<Box<Compiler>>,
+    up_values: Vec<UpValue>,
 }
 
 impl Compiler {
@@ -97,6 +106,8 @@ impl Compiler {
             locals: vec![],
             function: Default::default(),
             function_type,
+            enclosing: None,
+            up_values: vec![],
         };
         return compiler;
     }
@@ -113,12 +124,15 @@ impl Compiler {
         return &mut self.function;
     }
 
-    pub fn compile(&mut self) -> Result<Function, ExpError> {
+    pub fn compile(&mut self) -> Result<Closure, ExpError> {
         while !self.at_end() {
             self.declaration()?;
         }
         self.end();
-        Ok(self.function.clone())
+        Ok(Closure {
+            function: self.function.clone(),
+            up_values: vec![],
+        })
     }
 
     fn declaration(&mut self) -> Result<(), ExpError> {
@@ -148,7 +162,12 @@ impl Compiler {
             locals: vec![],
             function: Default::default(),
             function_type: fun_type,
+            enclosing: None,
+            up_values: vec![],
         };
+
+        compiler.enclosing = Some(Box::new(compiler));
+
         compiler.function.name = self.previous().lexeme.clone();
         compiler.begin_scope()?;
 
@@ -173,6 +192,8 @@ impl Compiler {
         compiler.emit_return();
         let func = compiler.function;
         self.emit_constant(Constant::Function(func));
+        self.emit_opt(OpCode::OpClosure(compiler.up_values));
+
         self.current = compiler.current;
 
         Ok(())
@@ -216,7 +237,7 @@ impl Compiler {
 
     fn call(&mut self, _: bool) -> Result<(), ExpError> {
         let args = self.argument_list()?;
-        self.emit_opt(OpCode::Call(args));
+        self.emit_opt(OpCode::OpCall(args));
         Ok(())
     }
 
@@ -236,7 +257,7 @@ impl Compiler {
     }
 
     fn and(&mut self, _: bool) -> Result<(), ExpError> {
-        let end_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        let end_jump = self.emit_jump(OpCode::OpJumpIfFalse(0));
         self.emit_opt(OpCode::OpPop);
         self.parse_precedence(Precedence::And)?;
         self.patch_jump(end_jump);
@@ -244,8 +265,8 @@ impl Compiler {
     }
 
     fn or(&mut self, _: bool) -> Result<(), ExpError> {
-        let else_jump = self.emit_jump(OpCode::JumpIfFalse(0));
-        let end_jump = self.emit_jump(OpCode::Jump(0));
+        let else_jump = self.emit_jump(OpCode::OpJumpIfFalse(0));
+        let end_jump = self.emit_jump(OpCode::OpJump(0));
 
         self.patch_jump(else_jump);
         self.emit_opt(OpCode::OpPop);
@@ -344,12 +365,12 @@ impl Compiler {
         if !self._match(TokenType::Semicolon) {
             self.expression()?;
             self.consume(TokenType::Semicolon, "Expect ';' after loop condition.")?;
-            exit_jump = Some(self.emit_jump(OpCode::JumpIfFalse(0)));
+            exit_jump = Some(self.emit_jump(OpCode::OpJumpIfFalse(0)));
             self.emit_opt(OpCode::OpPop);
         }
 
         if !self._match(TokenType::RightParen) {
-            let body_jump = self.emit_jump(OpCode::Jump(0));
+            let body_jump = self.emit_jump(OpCode::OpJump(0));
             let increment_start = self.current_chunk().code.len();
             self.expression()?;
             self.emit_opt(OpCode::OpPop);
@@ -380,7 +401,7 @@ impl Compiler {
         self.expression()?;
         self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
 
-        let exit_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        let exit_jump = self.emit_jump(OpCode::OpJumpIfFalse(0));
         self.emit_opt(OpCode::OpPop);
         self.statement()?;
 
@@ -392,7 +413,7 @@ impl Compiler {
 
     fn emit_loop(&mut self, loop_start: usize) {
         let i = self.current_chunk().code.len() - loop_start + 1;
-        self.emit_opt(OpCode::Loop(i))
+        self.emit_opt(OpCode::OpLoop(i))
     }
 
     fn if_statement(&mut self) -> Result<(), ExpError> {
@@ -400,10 +421,10 @@ impl Compiler {
         self.expression()?;
         self.consume(TokenType::RightParen, "Expect ')' after condition.")?;
 
-        let then_jump = self.emit_jump(OpCode::JumpIfFalse(0));
+        let then_jump = self.emit_jump(OpCode::OpJumpIfFalse(0));
         self.emit_opt(OpCode::OpPop);
         self.statement()?;
-        let else_jump = self.emit_jump(OpCode::Jump(0));
+        let else_jump = self.emit_jump(OpCode::OpJump(0));
         self.patch_jump(then_jump);
         self.emit_opt(OpCode::OpPop);
         if self._match(TokenType::Else) {
@@ -423,11 +444,11 @@ impl Compiler {
         let true_jump = self.current_chunk().code.len() - jump_location - 1;
         let (jump, line) = &self.current_chunk().code[jump_location];
         match jump {
-            OpCode::JumpIfFalse(_) => {
-                self.current_chunk().code[jump_location] = (OpCode::JumpIfFalse(true_jump), *line)
+            OpCode::OpJumpIfFalse(_) => {
+                self.current_chunk().code[jump_location] = (OpCode::OpJumpIfFalse(true_jump), *line)
             }
-            OpCode::Jump(_) => {
-                self.current_chunk().code[jump_location] = (OpCode::Jump(true_jump), *line)
+            OpCode::OpJump(_) => {
+                self.current_chunk().code[jump_location] = (OpCode::OpJump(true_jump), *line)
             }
             _ => panic!("not here")
         }
@@ -513,15 +534,7 @@ impl Compiler {
 
     fn named_variable(&mut self, name: String, can_assign: bool) -> Result<(), ExpError> {
         match self.resolve_local(name.clone())? {
-            None => {
-                let index = self.current_chunk().add_constant(Constant::String(name.clone()));
-                if can_assign && self._match(TokenType::Equal) {
-                    self.expression()?;
-                    self.emit_opt(OpCode::OpSetGlobal(index));
-                } else {
-                    self.emit_opt(OpCode::OpGetGlobal(index));
-                }
-            }
+            None => {}
             Some(index) => {
                 if can_assign && self._match(TokenType::Equal) {
                     self.expression()?;
@@ -529,10 +542,70 @@ impl Compiler {
                 } else {
                     self.emit_opt(OpCode::OpGetLocal(index));
                 }
+                return Ok(());
             }
         }
 
+        match self.resolve_up_value(name.clone())? {
+            None => {}
+            Some(index) => {
+                if can_assign && self._match(TokenType::Equal) {
+                    self.expression()?;
+                    self.emit_opt(OpCode::OpSetUpValue(index));
+                } else {
+                    self.emit_opt(OpCode::OpGetUpValue(index));
+                }
+                return Ok(());
+            }
+        }
+
+        let index = self.current_chunk().add_constant(Constant::String(name.clone()));
+        if can_assign && self._match(TokenType::Equal) {
+            self.expression()?;
+            self.emit_opt(OpCode::OpSetGlobal(index));
+        } else {
+            self.emit_opt(OpCode::OpGetGlobal(index));
+        }
+
         Ok(())
+    }
+
+    fn resolve_up_value(&mut self, name: String) -> Result<Option<LocalIndex>, ExpError> {
+        if self.enclosing.is_none() {
+            return Ok(None);
+        }
+
+        let mut ens = self.enclosing.as_mut().unwrap();
+        match ens.resolve_local(name.clone())? {
+            None => {}
+            Some(index) => {
+                return Ok(Some(Self::add_up_value(ens, index, true)));
+            }
+        }
+
+        match ens.resolve_up_value(name)? {
+            None => {}
+            Some(index) => {
+                return Ok(Some(Self::add_up_value(ens, index, false)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn add_up_value(compiler: &mut Compiler, index: LocalIndex, is_local: bool) -> LocalIndex {
+        for i in 0..compiler.up_values.len() {
+            let item = &compiler.up_values[i];
+            if item.is_local == is_local && item.index == index {
+                return i;
+            }
+        }
+
+        compiler.up_values.push(UpValue {
+            index,
+            is_local,
+        });
+        return compiler.up_values.len() - 1;
     }
 
     fn resolve_local(&mut self, name: String) -> Result<Option<LocalIndex>, ExpError> {
