@@ -7,7 +7,7 @@ use crate::types::expr::{ExpError, Literal};
 use crate::types::token::{Token, TokenType};
 use crate::types::val::Value;
 use crate::vm::chunk;
-use crate::vm::chunk::{Chunk, Constant, Function, OpCode};
+use crate::vm::chunk::{Chunk, Class, Constant, Function, OpCode};
 use crate::vm::chunk::OpCode::OpPop;
 use crate::vm::vm::FunctionType;
 
@@ -122,7 +122,9 @@ impl Compiler {
     }
 
     fn declaration(&mut self) -> Result<(), ExpError> {
-        if self._match(TokenType::Fun) {
+        if self._match(TokenType::Class) {
+            self.class_declaration()?;
+        } else if self._match(TokenType::Fun) {
             self.fun_declaration()?;
         } else if self._match(TokenType::Var) {
             self.var_declaration()?;
@@ -131,6 +133,27 @@ impl Compiler {
         }
 
         Ok(())
+    }
+
+    fn class_declaration(&mut self) -> Result<(), ExpError> {
+        self.consume(TokenType::Identifier, "Expect class name.")?;
+        let class_name = self.previous().lexeme.clone();
+
+        let constant_index = self.identifier_constant(class_name.clone());
+        self.declare_variable()?;
+
+        self.emit_opt(OpCode::OpClass(Class {
+            name: class_name.clone(),
+        }));
+        self.define_variable(constant_index)?;
+
+        self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
+        self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
+        Ok(())
+    }
+
+    fn identifier_constant(&mut self, name: String) -> usize {
+        self.current_chunk().add_constant(Constant::String(name))
     }
 
     fn fun_declaration(&mut self) -> Result<(), ExpError> {
@@ -485,6 +508,13 @@ impl Compiler {
     }
 
     fn string(&mut self) -> Result<(), ExpError> {
+        let string = self.prev_string()?;
+        let index = self.identifier_constant(string);
+        self.emit_opt(OpCode::OpConstant(index));
+        Ok(())
+    }
+
+    fn prev_string(&mut self) -> Result<String, ExpError> {
         let prev = self.previous().clone();
         match prev.token_type {
             TokenType::String => {
@@ -493,8 +523,7 @@ impl Compiler {
                     Some(s) => {
                         match s {
                             token::Literal::Str(s) => {
-                                let index = self.current_chunk().add_constant(Constant::String(s));
-                                self.emit_opt(OpCode::OpConstant(index))
+                                return Ok(s);
                             }
                             _ => panic!("not here")
                         }
@@ -503,7 +532,7 @@ impl Compiler {
             }
             _ => {}
         }
-        Ok(())
+        Err(ExpError::Common("not string".to_string()))
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), ExpError> {

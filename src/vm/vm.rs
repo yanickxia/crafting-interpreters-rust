@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use log::debug;
 
 use crate::{cast, types};
+use crate::types::class::LoxClass;
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::builtins;
-use crate::vm::chunk::{Chunk, Constant, Function, NativeFunction, OpCode};
+use crate::vm::chunk::{Chunk, Constant, Function, Instance, NativeFunction, OpCode};
 
 #[derive(Default, Clone)]
 pub struct CallFrame {
@@ -222,6 +223,9 @@ impl VirtualMachine {
                 self.call(self.stack.get(self.stack.len() - args_count - 1).expect("should exit").clone(), args_count)?;
                 debug!("call function, increment call frame");
             }
+            (OpCode::OpClass(clazz), _) => {
+                self.push(Value::Class(clazz))
+            }
         }
 
 
@@ -248,6 +252,15 @@ impl VirtualMachine {
 
     fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
         match callee {
+            Value::Class(clazz) => {
+                let new_instance = Instance {
+                    class: clazz,
+                    fields: Default::default(),
+                };
+
+                let index = self.stack.len() - 1 - arg_count;
+                self.stack[index] = Value::Instance(new_instance);
+            }
             Value::LoxFunc(name, _) => {
                 match self.find_function(name) {
                     None => panic!("Cannot call not function type"),

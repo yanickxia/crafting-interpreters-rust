@@ -1,7 +1,20 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::vm::VirtualMachine;
+
+#[derive(Default, Clone, Debug)]
+pub struct Class {
+    pub name: String,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct Instance {
+    pub class: Class,
+    pub fields: HashMap<String, Value>,
+}
+
 
 #[derive(Default, Clone, Debug)]
 pub struct Function {
@@ -50,6 +63,7 @@ pub enum OpCode {
     Jump(usize),
     Loop(usize),
     Call(usize),
+    OpClass(Class),
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +145,7 @@ impl Chunk {
             OpCode::Jump(offset) => format!("JUMP: {}", offset),
             OpCode::Loop(offset) => format!("LOOP: {}", offset),
             OpCode::Call(count) => format!("CALL: ARGS_SIZE {}", count),
+            OpCode::OpClass(name) => format!("CLASS: {:?}", name),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }
