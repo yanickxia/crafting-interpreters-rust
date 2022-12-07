@@ -1,10 +1,12 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
+use std::f32::consts::E;
 
 use log::debug;
 
 use crate::{cast, types};
 use crate::types::class::LoxClass;
+use crate::types::expr::ExpError;
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::builtins;
 use crate::vm::chunk::{Chunk, Constant, Function, Instance, NativeFunction, OpCode};
@@ -32,6 +34,7 @@ pub struct VirtualMachine {
     pub call_frames: Vec<CallFrame>,
     pub stack: Vec<Value>,
     pub globals: HashMap<String, Value>,
+    id: usize,
 }
 
 impl VirtualMachine {
@@ -66,7 +69,7 @@ impl VirtualMachine {
 
     fn pop_stack_n_times(&mut self, num_to_pop: usize) {
         for _ in 0..num_to_pop {
-            self.pop_stack();
+            self.pop();
         }
     }
 
@@ -107,7 +110,7 @@ impl VirtualMachine {
         let opt = self.next_op_and_advance();
         match opt {
             (OpCode::OpReturn, _) => {
-                let result = self.pop_stack();
+                let result = self.pop();
 
                 if self.call_frames.len() <= 1 {
                     self.call_frames.pop();
@@ -122,7 +125,7 @@ impl VirtualMachine {
                 debug!("return value: {:?}", result.clone())
             }
             (OpCode::OpNegate, _) => {
-                let new_value = match self.pop_stack() {
+                let new_value = match self.pop() {
                     Value::Number(val) => {
                         Value::Number(-val)
                     }
@@ -149,7 +152,7 @@ impl VirtualMachine {
                 self.push(Value::Bool(false))
             }
             (OpCode::OpNot, _) => {
-                match self.pop_stack() {
+                match self.pop() {
                     Value::Bool(b) => {
                         self.push(Value::Bool(!b))
                     }
@@ -160,28 +163,28 @@ impl VirtualMachine {
                 }
             }
             (OpCode::OpEqual, _) => {
-                let a = self.pop_stack();
-                let b = self.pop_stack();
+                let a = self.pop();
+                let b = self.pop();
                 self.push(Value::Bool(a.eq(&b)));
             }
             (OpCode::OpGreater, _) => {
-                let a = self.pop_stack();
-                let b = self.pop_stack();
+                let a = self.pop();
+                let b = self.pop();
                 self.push(Value::Bool(b > a));
             }
             (OpCode::OpLess, _) => {
-                let a = self.pop_stack();
-                let b = self.pop_stack();
+                let a = self.pop();
+                let b = self.pop();
                 self.push(Value::Bool(b < a));
             }
             (OpCode::OpPrint, _) => {
-                println!("{:?}", self.pop_stack());
+                println!("{:?}", self.pop());
             }
             (OpCode::OpPop, _) => {
-                self.pop_stack();
+                self.pop();
             }
             (OpCode::OpDefineGlobal(index), _) => {
-                let value = self.pop_stack();
+                let value = self.pop();
                 let key = cast!(self.frame().read_constant(index), Constant::String);
 
                 self.globals.insert(key, value);
@@ -226,10 +229,61 @@ impl VirtualMachine {
             (OpCode::OpClass(clazz), _) => {
                 self.push(Value::Class(clazz))
             }
+            (OpCode::OpSetProperty(name), _) => {
+                let mut instance = cast!(self.peek(1), Value::Instance);
+                let val = self.peek(0);
+                self.pop();
+                self.pop();
+                instance.fields.insert(name, val.clone());
+                self.push(val);
+                self.update_ref(Value::Instance(instance));
+            }
+            (OpCode::OpGetProperty(name), _) => {
+                let instance = cast!(self.peek(0), Value::Instance);
+                match instance.fields.get(name.as_str()) {
+                    None => {}
+                    Some(val) => {
+                        self.pop();
+                        self.push(val.clone());
+                        return Ok(());
+                    }
+                }
+                return Err(InterpreterError::SimpleError(format!("not found property {}", name)));
+            }
+        }
+        Ok(())
+    }
+
+    fn peek(&self, n: usize) -> Value {
+        self.stack[self.stack.len() - 1 - n].clone()
+    }
+
+    fn update_ref(&mut self, val: Value) {
+        let instance = cast!(val.clone(), Value::Instance);
+
+        for v in self.globals.values_mut() {
+            match v {
+                Value::Instance(ins) => {
+                    if ins.id == instance.id {
+                        ins.fields = instance.fields.clone()
+                    }
+                }
+                _ => {}
+            }
         }
 
 
-        Ok(())
+        for i in 0..self.stack.len() {
+            let item = &self.stack[i];
+            match item {
+                Value::Instance(ins) => {
+                    if ins.id == instance.id {
+                        self.stack[i] = val.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn find_function(&self, name: String) -> Option<Function> {
@@ -250,10 +304,16 @@ impl VirtualMachine {
         return None;
     }
 
+    fn next_id(&mut self) -> usize {
+        self.id += 1;
+        return self.id;
+    }
+
     fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
         match callee {
             Value::Class(clazz) => {
                 let new_instance = Instance {
+                    id: self.next_id(),
                     class: clazz,
                     fields: Default::default(),
                 };
@@ -276,11 +336,11 @@ impl VirtualMachine {
             Value::NativeFunc(native) => {
                 let mut values = vec![];
                 for _ in 0..native.arity {
-                    values.push(self.pop_stack());
+                    values.push(self.pop());
                 }
                 values.reverse();
                 // native function value
-                self.pop_stack();
+                self.pop();
 
                 let result = (native.func)(self, values.as_slice())?;
                 self.push(result);
@@ -292,7 +352,7 @@ impl VirtualMachine {
     }
 
 
-    pub fn pop_stack(&mut self) -> Value {
+    pub fn pop(&mut self) -> Value {
         match self.stack.pop() {
             Some(val) => val,
             None => panic!("attempted to pop empty stack!"),
@@ -303,8 +363,8 @@ impl VirtualMachine {
     }
 
     fn binary_opt(&mut self, opt: OpCode) {
-        let x = self.pop_stack();
-        let y = self.pop_stack();
+        let x = self.pop();
+        let y = self.pop();
 
         debug!("call binary opt: {:?}, x: {:?} y: {:?}", opt,x, y);
 

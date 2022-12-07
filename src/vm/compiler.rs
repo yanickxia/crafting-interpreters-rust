@@ -486,6 +486,19 @@ impl Compiler {
         Ok(())
     }
 
+    fn dot(&mut self, can_assign: bool) -> Result<(), ExpError> {
+        self.consume(TokenType::Identifier, "Expect property name after '.'.")?;
+        let property_name = self.previous().lexeme.clone();
+        if can_assign && self._match(TokenType::Equal) {
+            self.expression()?;
+            self.emit_opt(OpCode::OpSetProperty(property_name))
+        } else {
+            self.emit_opt(OpCode::OpGetProperty(property_name))
+        }
+
+        Ok(())
+    }
+
     fn apply_parse_fn(&mut self, parse_fn: ParseFn, can_assign: bool) -> Result<(), ExpError> {
         match parse_fn {
             ParseFn::Grouping => self.grouping(),
@@ -498,6 +511,7 @@ impl Compiler {
             ParseFn::And => self.and(can_assign),
             ParseFn::Or => self.or(can_assign),
             ParseFn::Call => self.call(can_assign),
+            ParseFn::Dot => self.dot(can_assign),
             _ => panic!("not here"),
             // ParseFn::Dot => self.dot(can_assign),
             // ParseFn::This => self.this(can_assign),

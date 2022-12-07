@@ -11,6 +11,7 @@ pub struct Class {
 
 #[derive(Default, Clone, Debug)]
 pub struct Instance {
+    pub id: usize,
     pub class: Class,
     pub fields: HashMap<String, Value>,
 }
@@ -64,6 +65,8 @@ pub enum OpCode {
     Loop(usize),
     Call(usize),
     OpClass(Class),
+    OpSetProperty(String),
+    OpGetProperty(String),
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +149,8 @@ impl Chunk {
             OpCode::Loop(offset) => format!("LOOP: {}", offset),
             OpCode::Call(count) => format!("CALL: ARGS_SIZE {}", count),
             OpCode::OpClass(name) => format!("CLASS: {:?}", name),
+            OpCode::OpSetProperty(name) => format!("OP_GET_PROPERTY: {:?}", name),
+            OpCode::OpGetProperty(name) => format!("OP_SET_PROPERTY: {:?}", name),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }
