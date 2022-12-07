@@ -9,7 +9,7 @@ use crate::types::class::LoxClass;
 use crate::types::expr::ExpError;
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::builtins;
-use crate::vm::chunk::{Chunk, Constant, Function, Instance, NativeFunction, OpCode};
+use crate::vm::chunk::{BoundMethod, Chunk, Class, Constant, Function, Instance, NativeFunction, OpCode};
 
 #[derive(Default, Clone)]
 pub struct CallFrame {
@@ -248,10 +248,40 @@ impl VirtualMachine {
                         return Ok(());
                     }
                 }
-                return Err(InterpreterError::SimpleError(format!("not found property {}", name)));
+
+                if !self.bind_method(&instance.class, name.as_str()) {
+                    return Err(InterpreterError::SimpleError(format!("not found property {}", name)));
+                }
+            }
+
+            (OpCode::OpMethod(name), _) => {
+                let method = cast!(self.peek(0), Value::Function);
+                let mut class = cast!(self.peek(1), Value::Class);
+                class.methods.insert(name, method);
+                self.pop();
+
+                let last_index = self.stack.len() - 1;
+                self.stack[last_index] = Value::Class(class);
             }
         }
         Ok(())
+    }
+    fn bind_method(&mut self, class: &Class, name: &str) -> bool {
+        match class.methods.get(name) {
+            None => {
+                return false;
+            }
+            Some(func) => {
+                let bound_method = BoundMethod {
+                    function: func.clone(),
+                    receiver: self.peek(0).clone(),
+                };
+                self.pop();
+                self.push(Value::BoundMethod(Box::new(bound_method)))
+            }
+        }
+
+        true
     }
 
     fn peek(&self, n: usize) -> Value {
@@ -265,7 +295,7 @@ impl VirtualMachine {
             match v {
                 Value::Instance(ins) => {
                     if ins.id == instance.id {
-                        ins.fields = instance.fields.clone()
+                        ins.fields = instance.fields.clone();
                     }
                 }
                 _ => {}
@@ -311,6 +341,9 @@ impl VirtualMachine {
 
     fn call(&mut self, callee: Value, arg_count: usize) -> Result<(), InterpreterError> {
         match callee {
+            Value::BoundMethod(bound_method) => {
+                return self.call(Value::Function(bound_method.function), arg_count);
+            }
             Value::Class(clazz) => {
                 let new_instance = Instance {
                     id: self.next_id(),
@@ -321,17 +354,12 @@ impl VirtualMachine {
                 let index = self.stack.len() - 1 - arg_count;
                 self.stack[index] = Value::Instance(new_instance);
             }
-            Value::LoxFunc(name, _) => {
-                match self.find_function(name) {
-                    None => panic!("Cannot call not function type"),
-                    Some(fx) => {
-                        self.call_frames.push(CallFrame {
-                            function: fx,
-                            ip: 0,
-                            slots_offset: self.stack.len() - arg_count,
-                        })
-                    }
-                }
+            Value::Function(func) => {
+                self.call_frames.push(CallFrame {
+                    function: func,
+                    ip: 0,
+                    slots_offset: self.stack.len() - arg_count,
+                })
             }
             Value::NativeFunc(native) => {
                 let mut values = vec![];

@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use crate::types::{class, expr};
-use crate::vm::chunk::{Class, Constant, Instance, NativeFunction};
+use crate::vm::chunk::{BoundMethod, Class, Constant, Function, Instance, NativeFunction};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -20,9 +20,11 @@ pub enum Value {
 
     // for fast return
     Ret(Box<Value>),
+    Function(Function),
     NativeFunc(NativeFunction),
     Class(Class),
     Instance(Instance),
+    BoundMethod(Box<BoundMethod>),
 }
 
 impl From<Constant> for Value {
@@ -41,7 +43,7 @@ impl From<Constant> for Value {
                 Value::String(s)
             }
             Constant::Function(func) => {
-                Value::LoxFunc(func.name, func.arity)
+                Value::Function(func)
             }
         };
     }

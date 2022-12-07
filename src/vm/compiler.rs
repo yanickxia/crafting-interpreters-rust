@@ -144,11 +144,26 @@ impl Compiler {
 
         self.emit_opt(OpCode::OpClass(Class {
             name: class_name.clone(),
+            methods: Default::default(),
         }));
         self.define_variable(constant_index)?;
+        self.named_variable(class_name, false)?;
 
         self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::Eof) {
+            self.method()?;
+        }
+
         self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
+        self.emit_opt(OpCode::OpPop);
+        Ok(())
+    }
+
+    fn method(&mut self) -> Result<(), ExpError> {
+        self.consume(TokenType::Identifier, "Expect method name.")?;
+        self.function(FunctionType::Function)?;
+        let method_name = self.previous().lexeme.clone();
+        self.emit_opt(OpCode::OpMethod(method_name));
         Ok(())
     }
 

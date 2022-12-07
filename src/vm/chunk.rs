@@ -4,9 +4,16 @@ use std::fmt::{Debug, Formatter};
 use crate::types::val::{InterpreterError, Value};
 use crate::vm::vm::VirtualMachine;
 
+#[derive(Clone, Debug)]
+pub struct BoundMethod {
+    pub function: Function,
+    pub receiver: Value,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Class {
     pub name: String,
+    pub methods: HashMap<String, Function>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -67,6 +74,7 @@ pub enum OpCode {
     OpClass(Class),
     OpSetProperty(String),
     OpGetProperty(String),
+    OpMethod(String),
 }
 
 #[derive(Debug, Clone)]
@@ -151,6 +159,7 @@ impl Chunk {
             OpCode::OpClass(name) => format!("CLASS: {:?}", name),
             OpCode::OpSetProperty(name) => format!("OP_GET_PROPERTY: {:?}", name),
             OpCode::OpGetProperty(name) => format!("OP_SET_PROPERTY: {:?}", name),
+            OpCode::OpMethod(name) => format!("OP_METHOD: {:?}", name),
         };
         println!("{0: <04}   {1: <50} line {2: <50}", index, formatted_op, lineno)
     }
